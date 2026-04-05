@@ -1,0 +1,25 @@
+@import "tailwindcss";
+
+:root {
+  --font-poppins: "Poppins", sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply text-gray-900;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-light;
+  }
+}
+
+@layer utilities {
+  .tracking-widest {
+    letter-spacing: 0.15em;
+  }
+}

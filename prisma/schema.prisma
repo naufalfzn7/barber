@@ -1,0 +1,408 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  MEMBER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum BookingStatus {
+  UPCOMING
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  NO_SHOW
+  PAYMENT_PENDING
+}
+
+enum PaymentMethod {
+  QRIS
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+enum InventoryMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum NotificationType {
+  LOW_STOCK
+  BOOKING_REMINDER
+  PAYMENT_UPDATE
+  SYSTEM
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model Branch {
+  id              String            @id @default(cuid())
+  code            String            @unique
+  name            String
+  timezone        String            @default("Asia/Jakarta")
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  users           User[]
+  memberProfiles  MemberProfile[]
+  adminProfiles   AdminProfile[]
+  barbermen       Barberman[]
+  services        Service[]
+  bookings        Booking[]
+  inventoryItems  InventoryItem[]
+  inventoryMoves  InventoryMovement[]
+  notifications   Notification[]
+  operatingHours  OperatingHour[]
+  barberSchedules BarberSchedule[]
+  holidays        Holiday[]
+  revenueDaily    RevenueDaily[]
+
+  @@index([isActive])
+}
+
+model User {
+  id                   String                 @id @default(cuid())
+  email                String                 @unique
+  passwordHash         String
+  fullName             String
+  phoneNumber          String?
+  role                 UserRole
+  mustChangePassword   Boolean                @default(false)
+  isActive             Boolean                @default(true)
+  branchId             String?
+  branch               Branch?                @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  memberProfile        MemberProfile?
+  adminProfile         AdminProfile?
+  memberBookings       Booking[]              @relation("MemberBookings")
+  createdBookings      Booking[]              @relation("BookingCreator")
+  bookingStatusChanges BookingStatusHistory[] @relation("BookingStatusChangedBy")
+  inventoryMovements   InventoryMovement[]    @relation("InventoryMovementActor")
+  processedPayments    Payment[]              @relation("PaymentProcessor")
+  notifications        Notification[]         @relation("NotificationReceiver")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+
+  @@index([role])
+  @@index([branchId])
+  @@index([isActive])
+}
+
+model MemberProfile {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  memberCode      String   @unique
+  defaultBranchId String?
+  joinedAt        DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultBranch   Branch?  @relation(fields: [defaultBranchId], references: [id], onDelete: SetNull)
+
+  @@index([defaultBranchId])
+}
+
+model AdminProfile {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  branchId    String?
+  jobTitle    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  branch      Branch?  @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  @@index([branchId])
+}
+
+model Barberman {
+  id              String           @id @default(cuid())
+  branchId        String
+  code            String
+  name            String
+  phoneNumber     String?
+  isActive        Boolean          @default(true)
+  defaultDuration Int              @default(60)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  branch          Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  schedules       BarberSchedule[]
+  holidays        Holiday[]
+  bookings        Booking[]
+
+  @@unique([branchId, code])
+  @@index([branchId, isActive])
+}
+
+model Service {
+  id                String    @id @default(cuid())
+  branchId          String
+  code              String
+  name              String
+  price             Decimal   @db.Decimal(12, 2)
+  durationMinutes   Int
+  bufferMinutes     Int       @default(10)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  branch            Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  bookings          Booking[]
+
+  @@unique([branchId, code])
+  @@index([branchId, isActive])
+}
+
+model Booking {
+  id             String                 @id @default(cuid())
+  code           String                 @unique
+  branchId       String
+  memberId       String?
+  createdById    String?
+  barbermanId    String?
+  serviceId      String
+  status         BookingStatus          @default(UPCOMING)
+  scheduledStart DateTime
+  scheduledEnd   DateTime
+  checkInAt      DateTime?
+  serviceStartAt DateTime?
+  serviceEndAt   DateTime?
+  completedAt    DateTime?
+  canceledAt     DateTime?
+  isWalkIn       Boolean                @default(false)
+  walkInName     String?
+  walkInPhone    String?
+  notes          String?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  branch         Branch                 @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  member         User?                  @relation("MemberBookings", fields: [memberId], references: [id], onDelete: SetNull)
+  createdBy      User?                  @relation("BookingCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  barberman      Barberman?             @relation(fields: [barbermanId], references: [id], onDelete: SetNull)
+  service        Service                @relation(fields: [serviceId], references: [id], onDelete: Restrict)
+  products       BookingProduct[]
+  statusHistory  BookingStatusHistory[]
+  payment        Payment?
+
+  @@index([branchId, status, scheduledStart])
+  @@index([barbermanId, scheduledStart])
+  @@index([memberId, scheduledStart])
+}
+
+model BookingStatusHistory {
+  id          String        @id @default(cuid())
+  bookingId   String
+  oldStatus   BookingStatus?
+  newStatus   BookingStatus
+  changedById String?
+  reason      String?
+  changedAt   DateTime      @default(now())
+  booking     Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  changedBy   User?         @relation("BookingStatusChangedBy", fields: [changedById], references: [id], onDelete: SetNull)
+
+  @@index([bookingId, changedAt])
+  @@index([changedById])
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  bookingId     String        @unique
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  amountDue     Decimal       @db.Decimal(12, 2)
+  amountPaid    Decimal?      @db.Decimal(12, 2)
+  changeAmount  Decimal?      @db.Decimal(12, 2)
+  externalRef   String?
+  qrisString    String?       @db.Text
+  qrisImageUrl  String?       @db.Text
+  qrisExpiresAt DateTime?
+  paidAt        DateTime?
+  processedById String?
+  isDeposit     Boolean       @default(false)
+  depositAmount Decimal?      @db.Decimal(12, 2)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  processedBy   User?         @relation("PaymentProcessor", fields: [processedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([method, paidAt])
+  @@index([processedById])
+  @@index([isDeposit])
+}
+
+model InventoryItem {
+  id          String              @id @default(cuid())
+  branchId    String
+  sku         String
+  name        String
+  sellingPrice Decimal             @default(0) @db.Decimal(12, 2)
+  stockQty    Int                 @default(0)
+  minStockQty Int                 @default(0)
+  isActive    Boolean             @default(true)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  branch      Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  movements   InventoryMovement[]
+  bookingProducts BookingProduct[]
+
+  @@unique([branchId, sku])
+  @@index([branchId, isActive])
+}
+
+model BookingProduct {
+  id              String        @id @default(cuid())
+  bookingId       String
+  inventoryItemId String
+  itemSku         String
+  itemName        String
+  unitPrice       Decimal       @db.Decimal(12, 2)
+  quantity        Int
+  subtotal        Decimal       @db.Decimal(12, 2)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id], onDelete: Restrict)
+
+  @@unique([bookingId, inventoryItemId])
+  @@index([bookingId])
+  @@index([inventoryItemId])
+}
+
+model InventoryMovement {
+  id              String                @id @default(cuid())
+  branchId        String
+  inventoryItemId String
+  type            InventoryMovementType
+  quantity        Int
+  beforeQty       Int
+  afterQty        Int
+  note            String?
+  referenceId     String?
+  actedById       String?
+  createdAt       DateTime              @default(now())
+  branch          Branch                @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  inventoryItem   InventoryItem         @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  actedBy         User?                 @relation("InventoryMovementActor", fields: [actedById], references: [id], onDelete: SetNull)
+
+  @@index([inventoryItemId, createdAt])
+  @@index([branchId, createdAt])
+  @@index([actedById])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  branchId  String?
+  userId    String?
+  type      NotificationType
+  title     String
+  message   String
+  metadata  Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+  readAt    DateTime?
+  branch    Branch?          @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user      User?            @relation("NotificationReceiver", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, isRead, createdAt])
+  @@index([userId, isRead, createdAt])
+}
+
+model OperatingHour {
+  id        String    @id @default(cuid())
+  branchId  String
+  dayOfWeek DayOfWeek
+  openTime  String
+  closeTime String
+  isClosed  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  branch    Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, dayOfWeek])
+  @@index([branchId, isClosed])
+}
+
+model BarberSchedule {
+  id         String    @id @default(cuid())
+  branchId   String
+  barbermanId String
+  date       DateTime
+  startTime  String
+  endTime    String
+  isDayOff   Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  branch     Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  barberman  Barberman @relation(fields: [barbermanId], references: [id], onDelete: Cascade)
+
+  @@unique([barbermanId, date, startTime])
+  @@index([branchId, date])
+  @@index([barbermanId, date])
+}
+
+model Holiday {
+  id         String    @id @default(cuid())
+  branchId   String
+  barbermanId String?
+  date       DateTime
+  isFullDay  Boolean   @default(true)
+  startTime  String?
+  endTime    String?
+  reason     String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  branch     Branch    @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  barberman  Barberman? @relation(fields: [barbermanId], references: [id], onDelete: SetNull)
+
+  @@index([branchId, date])
+  @@index([barbermanId, date])
+}
+
+model RevenueDaily {
+  id               String   @id @default(cuid())
+  branchId         String
+  date             DateTime
+  totalRevenue     Decimal  @default(0) @db.Decimal(12, 2)
+  cashRevenue      Decimal  @default(0) @db.Decimal(12, 2)
+  qrisRevenue      Decimal  @default(0) @db.Decimal(12, 2)
+  totalBookings    Int      @default(0)
+  completedBookings Int     @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  branch           Branch   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@unique([branchId, date])
+  @@index([date])
+}
+
+model SystemSetting {
+  id               String   @id @default(cuid())
+  key              String   @unique
+  value            String
+  description      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([key])
+}
