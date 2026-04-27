@@ -44,7 +44,7 @@ Ganti `PORT` dan `REF` sesuai kondisi tes kamu.
 
 ```bash
 PORT=3001
-REF="QRIS-481139702714-MNL39XBN"
+REF="DEPOSIT-BKG-1777249227215-352361-1777249228287"
 TOKEN=$(sed -n 's/^XENDIT_WEBHOOK_TOKEN="\(.*\)"/\1/p' .env | head -n 1)
 ```
 
@@ -60,10 +60,12 @@ curl -i -X POST "http://127.0.0.1:${PORT}/api/payments/webhook/xendit" \
 }'
 
 ```bash
+
 curl -i -X POST "http://127.0.0.1:${PORT}/api/payments/webhook/xendit" \
   -H "Content-Type: application/json" \
   -H "x-callback-token: ${TOKEN}" \
   -d "{\"reference_id\":\"${REF}\",\"status\":\"PAID\",\"paid_at\":\"2026-04-05T10:00:00.000Z\"}"
+
 ```
 
 Expected:
