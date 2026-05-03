@@ -17,7 +17,7 @@ export default function Footer() {
             JOIN THE NEWSLETTER
           </h2>
           <p className="text-sm mb-10 tracking-wide font-light">
-            To keep up to date with all things Nomad, sign up below and become
+            To keep up to date with all things Monarch, sign up below and become
             the first to know!
           </p>
 
@@ -49,9 +49,11 @@ export default function Footer() {
       {/* --- MAIN FOOTER SECTION --- */}
       <div className="max-w-374 mx-auto px-6 md:px-16 lg:px-24 xl:px-32 pt-10 pb-20">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-12 lg:gap-8 items-start">
-          {/* KOLOM 1: NOMAD (Pojok Kiri) */}
+          {/* KOLOM 1: MONARCH (Pojok Kiri) */}
           <div className="flex flex-col items-start">
-            <h3 className="text-4xl font-black tracking-tighter mb-4">NOMAD</h3>
+            <h3 className="text-4xl font-black tracking-tighter mb-4">
+              MONARCH
+            </h3>
             <ul className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] tracking-[0.15em] font-medium text-gray-800">
               {socialLinks.map((s, index) => (
                 <li key={s.label} className="flex items-center gap-2">
@@ -68,7 +70,7 @@ export default function Footer() {
               ))}
             </ul>
             <p className="text-[10px] tracking-widest text-gray-500 mt-12">
-              © {currentYear}, Nomad Barber
+              © {currentYear}, Monarch Barber
             </p>
           </div>
 

@@ -692,18 +692,6 @@ export default function ReservasiPage() {
         if (bookingStatus === "COMPLETED" || payment?.status === "PAID") {
           syncBookingStatusLocally(bookingId, "COMPLETED");
           if (!silent) {
-            const booking = bookingMap.get(bookingId);
-            if (booking) {
-              setPaymentSuccess({
-                bookingId,
-                bookingCode: booking.code,
-                amount:
-                  booking.remainingDue > 0
-                    ? booking.remainingDue
-                    : booking.totalDue,
-                method: "QRIS",
-              });
-            }
             setMessage(
               "Pembayaran QRIS terkonfirmasi. Booking otomatis menjadi COMPLETED.",
             );
@@ -1636,19 +1624,21 @@ export default function ReservasiPage() {
 
             {qrisModal.qrString ? (
               <div className="space-y-3">
-                <div className="border border-gray-200 rounded-xl p-3 bg-gray-50 flex items-center justify-center">
-                  <img
-                    src={`https://api.qrserver.com/v1/create-qr-code/?size=280x280&data=${encodeURIComponent(qrisModal.qrString)}`}
-                    alt="QRIS"
-                    className="w-56 h-56"
-                  />
+                <div className="border border-gray-200 rounded-xl p-6 bg-gray-50 flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => window.location.replace(qrisModal.qrString)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow w-full text-center block transition-colors"
+                  >
+                    Buka Link Pembayaran Xendit
+                  </button>
                 </div>
                 <button
                   type="button"
                   onClick={copyQrString}
                   className="w-full border border-gray-300 rounded-lg py-2 text-xs font-semibold"
                 >
-                  Salin QR String
+                  Salin Link Pembayaran
                 </button>
               </div>
             ) : (

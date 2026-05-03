@@ -86,7 +86,7 @@ function normalizeXenditStatus(
   return null;
 }
 
-async function createDynamicQris(input: {
+async function createXenditInvoice(input: {
   externalRef: string;
   amount: number;
 }) {
@@ -102,7 +102,7 @@ async function createDynamicQris(input: {
 
   const basic = Buffer.from(`${env.xenditSecretKey}:`).toString("base64");
 
-  const response = await fetch("https://api.xendit.co/qr_codes", {
+  const response = await fetch("https://api.xendit.co/v2/invoices", {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
@@ -110,9 +110,9 @@ async function createDynamicQris(input: {
     },
     body: JSON.stringify({
       external_id: input.externalRef,
-      type: "DYNAMIC",
-      currency: "IDR",
       amount: Math.round(input.amount),
+      description: `Payment for booking ${input.externalRef}`,
+      success_redirect_url: `${env.appUrl}/reservasi/pembayaran-sukses?xendit_ref=${encodeURIComponent(input.externalRef)}&xendit_status=paid`,
       callback_url: callbackUrl,
     }),
   });
@@ -121,22 +121,23 @@ async function createDynamicQris(input: {
     id?: string;
     external_id?: string;
     reference_id?: string;
+    invoice_url?: string;
     qr_string?: string;
     status?: string;
-    expires_at?: string;
+    expiry_date?: string;
     message?: string;
   };
 
   if (!response.ok) {
-    throw new Error(body.message ?? "Failed to create QRIS transaction");
+    throw new Error(body.message ?? "Failed to create invoice transaction");
   }
 
   return {
     id: body.id ?? null,
     referenceId: body.external_id ?? body.reference_id ?? input.externalRef,
-    qrString: body.qr_string ?? null,
+    qrString: body.invoice_url ?? null, // Store invoice URL in qrString column to avoid Prisma changes
     status: body.status ?? "PENDING",
-    expiresAt: body.expires_at ?? null,
+    expiresAt: body.expiry_date ?? null,
   };
 }
 
@@ -332,7 +333,10 @@ export const paymentService = {
     }
 
     const externalRef = generateExternalRef(booking.code);
-    const qris = await createDynamicQris({ externalRef, amount: remainingDue });
+    const qris = await createXenditInvoice({
+      externalRef,
+      amount: remainingDue,
+    });
 
     if (booking.status === BookingStatus.IN_PROGRESS) {
       await paymentRepository.setBookingPaymentPending({
@@ -354,9 +358,7 @@ export const paymentService = {
           : null,
       isDeposit: false,
       qrisString: qris.qrString,
-      qrisImageUrl: qris.qrString
-        ? `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qris.qrString)}`
-        : null,
+      qrisImageUrl: qris.qrString, // Invoice URL
       qrisExpiresAt: qris.expiresAt ? new Date(qris.expiresAt) : null,
     });
 
@@ -399,12 +401,17 @@ export const paymentService = {
 
     const externalRef = generateExternalRef(payment.booking.code);
     const amountDue = toNumberDecimal(payment.amountDue);
-    const qris = await createDynamicQris({ externalRef, amount: amountDue });
+    const qris = await createXenditInvoice({ externalRef, amount: amountDue });
 
     const updated = await paymentRepository.upsertQrisPayment({
       bookingId: payment.bookingId,
       amountDue: payment.amountDue,
       externalRef: qris.referenceId,
+      depositAmount: payment.depositAmount,
+      isDeposit: payment.isDeposit,
+      qrisString: qris.qrString,
+      qrisImageUrl: qris.qrString, // Invoice URL
+      qrisExpiresAt: qris.expiresAt ? new Date(qris.expiresAt) : null,
     });
 
     return {

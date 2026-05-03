@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   formatIndonesianDateTime,
   formatIndonesianDate,
@@ -20,6 +20,24 @@ interface Booking {
   service: { name: string };
   barberman: { name: string };
   branch: { name: string };
+  payment?: { status: string; isDeposit: boolean } | null;
+}
+
+function formatExpiryDateTime(isoString: string) {
+  try {
+    const date = new Date(isoString);
+    return new Intl.DateTimeFormat("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+  } catch {
+    return "";
+  }
 }
 
 function getRemainingLabel(expiresAt?: string | null) {
@@ -32,8 +50,28 @@ function getRemainingLabel(expiresAt?: string | null) {
     return "Kadaluarsa";
   }
 
-  const minutes = Math.ceil(remainingMs / (60 * 1000));
-  return `${minutes} menit lagi`;
+  return `Bayar sebelum: ${formatExpiryDateTime(expiresAt)}`;
+}
+
+function getPaymentLabel(
+  expiresAt?: string | null,
+  paymentStatus?: string | null,
+) {
+  const normalizedStatus = paymentStatus?.toUpperCase() ?? "";
+
+  if (normalizedStatus === "EXPIRED") {
+    return "Kadaluarsa";
+  }
+
+  if (normalizedStatus === "FAILED") {
+    return "Pembayaran gagal";
+  }
+
+  if (normalizedStatus === "PAID") {
+    return "Lunas";
+  }
+
+  return getRemainingLabel(expiresAt);
 }
 
 interface ReceiptData {
@@ -106,14 +144,12 @@ export default function MemberReservationDashboard() {
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
 
-  useEffect(() => {
-    loadBookings();
-  }, []);
-
-  async function loadBookings() {
+  const loadBookings = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/bookings/my");
+      const response = await fetch("/api/bookings/my", {
+        cache: "no-store",
+      });
       const data = await response.json();
       setBookings(data.bookings || []);
     } catch {
@@ -121,7 +157,20 @@ export default function MemberReservationDashboard() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    void loadBookings();
+  }, [loadBookings]);
+
+  useEffect(() => {
+    const handler = () => {
+      void loadBookings();
+    };
+
+    window.addEventListener("bookings:changed", handler);
+    return () => window.removeEventListener("bookings:changed", handler);
+  }, [loadBookings]);
 
   async function openBookingDetail(booking: Booking) {
     setSelectedBooking(booking);
@@ -172,6 +221,11 @@ export default function MemberReservationDashboard() {
       }
 
       toast.success("Reservasi berhasil dibatalkan");
+      // Optimistically remove from local state so UI updates immediately
+      setBookings((prev) => prev.filter((b) => b.id !== booking.id));
+      // Notify other components to refresh their data
+      window.dispatchEvent(new Event("bookings:changed"));
+      // Re-fetch canonical data from the server
       await loadBookings();
     } catch (error) {
       toast.error(
@@ -282,9 +336,12 @@ export default function MemberReservationDashboard() {
               </div>
             ) : (
               onProcessBookings.map((booking) => {
-                const remainingLabel = getRemainingLabel(
+                const paymentStatus = booking.payment?.status ?? booking.status;
+                const paymentLabel = getPaymentLabel(
                   booking.pendingExpiresAt,
+                  paymentStatus,
                 );
+                const isPaymentPending = paymentStatus === "PENDING";
 
                 return (
                   <div
@@ -335,10 +392,12 @@ export default function MemberReservationDashboard() {
                         <p className="font-semibold text-black mt-1">
                           {booking.status}
                         </p>
-                        {booking.status === "PAYMENT_PENDING" &&
-                          remainingLabel && (
+                        {(paymentStatus === "PENDING" ||
+                          paymentStatus === "EXPIRED" ||
+                          paymentStatus === "FAILED") &&
+                          paymentLabel && (
                             <p className="text-xs text-red-600 mt-1 font-semibold">
-                              Batas bayar: {remainingLabel}
+                              {paymentLabel}
                             </p>
                           )}
                       </div>
@@ -347,22 +406,20 @@ export default function MemberReservationDashboard() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         onClick={() =>
-                          booking.status === "PAYMENT_PENDING"
+                          isPaymentPending
                             ? openPaymentModal(booking)
                             : openBookingDetail(booking)
                         }
                         className={`px-4 py-2 text-xs tracking-[0.2em] uppercase font-bold text-white transition-colors ${
-                          booking.status === "PAYMENT_PENDING"
+                          isPaymentPending
                             ? "bg-red-600 hover:bg-red-700"
                             : "bg-black hover:bg-black/80"
                         }`}
                       >
-                        {booking.status === "PAYMENT_PENDING"
-                          ? "Bayar"
-                          : "Lihat Detail"}
+                        {isPaymentPending ? "Bayar" : "Lihat Detail"}
                       </button>
 
-                      {booking.status === "PAYMENT_PENDING" && (
+                      {isPaymentPending && (
                         <button
                           onClick={() => void cancelPendingBooking(booking)}
                           disabled={cancelingBookingId === booking.id}
@@ -739,30 +796,7 @@ export default function MemberReservationDashboard() {
                 </div>
 
                 <div className="flex gap-2 pt-4">
-                  {selectedBooking.status === "PAYMENT_PENDING" ? (
-                    <>
-                      <button
-                        onClick={() => {
-                          setSelectedBooking(null);
-                          void openPaymentModal(selectedBooking);
-                        }}
-                        className="flex-1 bg-red-600 text-white py-2 text-xs tracking-[0.2em] uppercase font-bold hover:bg-red-700"
-                      >
-                        Bayar
-                      </button>
-                      <button
-                        onClick={() =>
-                          void cancelPendingBooking(selectedBooking)
-                        }
-                        disabled={cancelingBookingId === selectedBooking.id}
-                        className="flex-1 border border-red-300 bg-white text-red-700 py-2 text-xs tracking-[0.2em] uppercase font-bold hover:bg-red-50 disabled:opacity-60"
-                      >
-                        {cancelingBookingId === selectedBooking.id
-                          ? "Membatalkan..."
-                          : "Batalkan"}
-                      </button>
-                    </>
-                  ) : (
+                  {selectedBooking.status === "COMPLETED" ? (
                     <button
                       onClick={() => loadReceipt(selectedBooking.id)}
                       disabled={loadingReceipt}
@@ -770,6 +804,10 @@ export default function MemberReservationDashboard() {
                     >
                       {loadingReceipt ? "Memuat..." : "Lihat Nota Digital"}
                     </button>
+                  ) : (
+                    <div className="flex-1 border border-black/10 bg-black/5 px-4 py-2 text-center text-xs tracking-[0.16em] uppercase font-semibold text-black/60">
+                      Nota tersedia setelah reservasi selesai
+                    </div>
                   )}
                   <button
                     onClick={() => setSelectedBooking(null)}

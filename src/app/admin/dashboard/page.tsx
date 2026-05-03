@@ -363,7 +363,7 @@ export default function DashboardPage() {
             <StatCard
               label="Pending Payment"
               value={dashboard.summary.paymentPending}
-              sub="Menunggu QRIS"
+              sub="Menunggu Pembayaran"
               accent="bg-violet-50"
               icon={<span className="text-2xl">◌</span>}
             />

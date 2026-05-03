@@ -11,15 +11,7 @@ import { env } from "@/server/core/env";
 const XENDIT_CALLBACK_URL_REGEX =
   /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,63}\b([-a-zA-Z0-9()@:%_+.~#?&\/=]*)$/;
 
-function buildQrImageUrl(qrString: string | null) {
-  if (!qrString) {
-    return null;
-  }
-
-  return `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrString)}`;
-}
-
-async function createDepositQris(input: {
+async function createXenditInvoice(input: {
   externalRef: string;
   amount: number;
 }) {
@@ -39,7 +31,7 @@ async function createDepositQris(input: {
 
   const basic = Buffer.from(`${env.xenditSecretKey}:`).toString("base64");
 
-  const response = await fetch("https://api.xendit.co/qr_codes", {
+  const response = await fetch("https://api.xendit.co/v2/invoices", {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,
@@ -47,9 +39,9 @@ async function createDepositQris(input: {
     },
     body: JSON.stringify({
       external_id: input.externalRef,
-      type: "DYNAMIC",
-      currency: "IDR",
       amount: Math.round(input.amount),
+      description: `Payment for deposit ${input.externalRef}`,
+      success_redirect_url: `${env.appUrl}/reservasi/pembayaran-sukses?xendit_ref=${encodeURIComponent(input.externalRef)}&xendit_status=paid`,
       callback_url: callbackUrl,
     }),
   });
@@ -58,23 +50,24 @@ async function createDepositQris(input: {
     id?: string;
     external_id?: string;
     reference_id?: string;
+    invoice_url?: string;
     qr_string?: string;
     status?: string;
-    expires_at?: string;
+    expiry_date?: string;
     message?: string;
   };
 
   if (!response.ok) {
-    throw new Error(body.message ?? "Failed to create QRIS transaction");
+    throw new Error(body.message ?? "Failed to create invoice transaction");
   }
 
   return {
     id: body.id ?? null,
     referenceId: body.external_id ?? body.reference_id ?? input.externalRef,
-    qrString: body.qr_string ?? null,
-    qrImageUrl: buildQrImageUrl(body.qr_string ?? null),
+    qrString: body.invoice_url ?? null, // Use qrString to pass checkout URL to DB/Frontend
+    qrImageUrl: body.invoice_url ?? null,
     status: body.status ?? "PENDING",
-    expiresAt: body.expires_at ?? null,
+    expiresAt: body.expiry_date ?? null,
   };
 }
 
@@ -136,7 +129,7 @@ export async function POST(request: NextRequest) {
     // Return existing payment if already exists (idempotency)
     if (booking.payment) {
       if (!booking.payment.qrisString || !booking.payment.qrisImageUrl) {
-        const legacyQris = await createDepositQris({
+        const legacyQris = await createXenditInvoice({
           externalRef:
             booking.payment.externalRef ?? `DEPOSIT-${booking.code}-LEGACY`,
           amount: Number(booking.payment.amountDue),
@@ -204,8 +197,8 @@ export async function POST(request: NextRequest) {
     // Generate external reference for Xendit
     const externalRef = `DEPOSIT-${booking.code}-${Date.now()}`;
 
-    // Create QRIS via Xendit
-    const qris = await createDepositQris({
+    // Create Invoice via Xendit
+    const qris = await createXenditInvoice({
       externalRef,
       amount: depositAmount,
     });

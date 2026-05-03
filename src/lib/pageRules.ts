@@ -15,34 +15,6 @@ type RuleRoute = {
 export const pageRulesByScope: Record<RuleScope, RuleRoute[]> = {
   user: [
     {
-      path: "/services",
-      rule: {
-        title: "Layanan",
-        usage: [
-          "Gunakan halaman ini untuk memahami durasi dan harga sebelum booking.",
-          "Bandingkan layanan antar kebutuhan grooming.",
-        ],
-        forbidden: [
-          "Jangan menganggap harga final jika belum memilih cabang.",
-          "Jangan skip konfirmasi detail layanan saat checkout.",
-        ],
-      },
-    },
-    {
-      path: "/gallery",
-      rule: {
-        title: "Galeri",
-        usage: [
-          "Jadikan galeri sebagai referensi style sebelum reservasi.",
-          "Lanjutkan ke booking jika sudah menentukan kebutuhan layanan.",
-        ],
-        forbidden: [
-          "Jangan menganggap semua style cocok untuk setiap tipe rambut.",
-          "Jangan memakai galeri sebagai pengganti konsultasi barber.",
-        ],
-      },
-    },
-    {
       path: "/about-us",
       rule: {
         title: "Tentang Kami",

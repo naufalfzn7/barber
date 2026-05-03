@@ -16,9 +16,35 @@ function getFallbackExpiresAtIso() {
 
 function formatCountdown(seconds: number) {
   const safe = Math.max(seconds, 0);
-  const mins = Math.floor(safe / 60);
+  const days = Math.floor(safe / 86400);
+  const hours = Math.floor((safe % 86400) / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
   const secs = safe % 60;
+
+  if (days > 0) {
+    return `${days} hari ${hours} jam`;
+  }
+  if (hours > 0) {
+    return `${hours}:${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  }
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function formatExpiryDateTime(isoString: string) {
+  try {
+    const date = new Date(isoString);
+    return new Intl.DateTimeFormat("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+  } catch {
+    return "";
+  }
 }
 
 type PaymentStatus = "PENDING" | "PAID" | "EXPIRED" | "FAILED";
@@ -50,11 +76,14 @@ export default function DepositPaymentModal({
     "INIT",
   );
   const [invoiceId, setInvoiceId] = useState("");
+  const [paymentId, setPaymentId] = useState("");
   const [pollingPayment, setPollingPayment] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [qrImageUrl, setQrImageUrl] = useState("");
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const paymentUrl = qrImageUrl || qrCode;
 
   const createDepositPayment = useCallback(async () => {
     setLoading(true);
@@ -76,6 +105,8 @@ export default function DepositPaymentModal({
       setQrImageUrl(data.qris?.qrImageUrl || "");
       setInvoiceId(data.payment?.externalRef || "");
       setPaymentStatus((data.payment?.status as PaymentStatus) || "PENDING");
+      setPaymentId(data.payment?.id || "");
+      // Use Xendit expiry as the sole source of truth, fallback to default timeout only if not provided
       setExpiresAt(data.qris?.expiresAt || getFallbackExpiresAtIso());
     } catch {
       toast.error("Gagal membuat pembayaran deposit");
@@ -84,7 +115,39 @@ export default function DepositPaymentModal({
     }
   }, [bookingId]);
 
-  // Initialize payment on modal open
+  // Initialize payment on modal open (only once, not on re-open)
+  const retryDeposit = useCallback(async () => {
+    if (!paymentId) {
+      toast.error("Payment ID tidak ditemukan");
+      return;
+    }
+    setRetrying(true);
+    try {
+      const response = await fetch("/api/payments/qris/retry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paymentId }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        toast.error(data.message || "Gagal retry pembayaran");
+        return;
+      }
+      setQrCode(data.result?.qris?.qrString || "");
+      setQrImageUrl(data.result?.qris?.qrImageUrl || "");
+      setInvoiceId(data.result?.payment?.externalRef || "");
+      setPaymentStatus(
+        (data.result?.payment?.status as PaymentStatus) || "PENDING",
+      );
+      setExpiresAt(data.result?.qris?.expiresAt || getFallbackExpiresAtIso());
+      toast.success("QRIS pembayaran baru siap dibayar");
+    } catch {
+      toast.error("Gagal retry pembayaran");
+    } finally {
+      setRetrying(false);
+    }
+  }, [paymentId]);
+
   useEffect(() => {
     if (isOpen && paymentStatus === "INIT") {
       void createDepositPayment();
@@ -134,10 +197,12 @@ export default function DepositPaymentModal({
 
         if (newStatus === "PAID") {
           setPaymentStatus("PAID");
+          void onRefresh?.();
           toast.success("Deposit berhasil dibayar!");
           setShowSuccessModal(true);
         } else if (newStatus && newStatus !== paymentStatus) {
           setPaymentStatus(newStatus);
+          void onRefresh?.();
         }
       } catch {
         // Silent fail on polling
@@ -233,49 +298,90 @@ export default function DepositPaymentModal({
                     <span className="font-mono text-gray-900">{invoiceId}</span>
                   </p>
                 )}
-                {paymentStatus === "PENDING" && remainingSeconds !== null && (
-                  <p className="text-gray-600">
-                    Batas bayar:{" "}
-                    <span className="font-semibold text-red-600">
-                      {formatCountdown(remainingSeconds)}
-                    </span>
-                  </p>
+                {paymentStatus === "PENDING" && expiresAt && (
+                  <div className="space-y-1">
+                    <p className="text-gray-600">
+                      Bayar sebelum:{" "}
+                      <span className="font-semibold text-gray-900">
+                        {formatExpiryDateTime(expiresAt)}
+                      </span>
+                    </p>
+                    {remainingSeconds !== null && (
+                      <p className="text-gray-600 text-xs">
+                        Sisa waktu:{" "}
+                        <span className="font-semibold text-red-600">
+                          {formatCountdown(remainingSeconds)}
+                        </span>
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {/* QR Code Display */}
-              <div className="border border-gray-200 rounded-lg p-4 bg-gray-50 flex items-center justify-center">
-                <img
-                  src={
-                    qrImageUrl ||
-                    `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(qrCode)}`
-                  }
-                  alt="QRIS"
-                  className="w-64 h-64"
-                />
-              </div>
+              {/* Payment Link Display */}
+              <div className="border border-gray-200 rounded-lg p-6 bg-gray-50 flex flex-col items-center justify-center space-y-4">
+                {paymentStatus === "PENDING" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!paymentUrl) {
+                        toast.error("Link pembayaran belum tersedia");
+                        return;
+                      }
 
-              {/* Copy QR Button */}
-              <button
-                onClick={copyQrString}
-                className="w-full border border-gray-300 rounded py-2 text-xs font-semibold text-gray-900 hover:bg-gray-50 transition-colors"
-              >
-                Salin QR String
-              </button>
+                      window.location.replace(paymentUrl);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow w-full text-center transition-colors"
+                  >
+                    Bayar Sekarang
+                  </button>
+                )}
+
+                {(paymentStatus === "EXPIRED" ||
+                  paymentStatus === "FAILED") && (
+                  <button
+                    onClick={() => void retryDeposit()}
+                    disabled={retrying}
+                    className="bg-orange-600 hover:bg-orange-700 disabled:opacity-60 text-white font-bold py-3 px-6 rounded-lg shadow w-full transition-colors"
+                  >
+                    {retrying ? "Memproses Retry..." : "🔄 Retry Pembayaran"}
+                  </button>
+                )}
+              </div>
 
               {/* Payment Instructions */}
-              <div className="bg-yellow-50 border border-yellow-200 p-4 rounded text-xs text-black/70">
-                <p className="font-semibold mb-2">Instruksi Pembayaran:</p>
-                <ol className="list-decimal list-inside space-y-1 text-xs">
-                  <li>Buka aplikasi e-wallet Anda (GCash, Dana, OVO, dll)</li>
-                  <li>Pilih menu Bayar dengan QRIS</li>
-                  <li>Scan QR code di atas</li>
-                  <li>
-                    Konfirmasi pembayaran sebesar Rp{" "}
-                    {depositAmount.toLocaleString("id-ID")}
-                  </li>
-                </ol>
-              </div>
+              {paymentStatus === "PENDING" && (
+                <div className="bg-yellow-50 border border-yellow-200 p-4 rounded text-xs text-black/70">
+                  <p className="font-semibold mb-2">Instruksi Pembayaran:</p>
+                  <ol className="list-decimal list-inside space-y-1 text-xs">
+                    <li>Klik tombol "Bayar Sekarang" di atas</li>
+                    <li>Anda akan diarahkan ke halaman pembayaran Xendit</li>
+                    <li>
+                      Pilih metode pembayaran yang Anda inginkan (E-Wallet, VA,
+                      QRIS, dsb)
+                    </li>
+                    <li>
+                      Selesaikan pembayaran sebesar Rp{" "}
+                      {depositAmount.toLocaleString("id-ID")}
+                    </li>
+                  </ol>
+                </div>
+              )}
+
+              {(paymentStatus === "EXPIRED" || paymentStatus === "FAILED") && (
+                <div className="bg-red-50 border border-red-200 p-4 rounded text-xs text-red-700">
+                  <p className="font-semibold mb-2">
+                    {paymentStatus === "EXPIRED"
+                      ? "⏰ Waktu pembayaran telah habis"
+                      : "❌ Pembayaran gagal"}
+                  </p>
+                  <p>
+                    {paymentStatus === "EXPIRED"
+                      ? "Invoice telah kadaluarsa. Silakan generate QR baru dengan mengklik tombol Retry di bawah."
+                      : "Pembayaran tidak dapat diproses. Silakan coba lagi dengan mengklik tombol Retry di bawah."}
+                  </p>
+                </div>
+              )}
 
               <p className="text-xs text-black/60 text-center">
                 Status akan otomatis diperbarui dalam beberapa detik setelah

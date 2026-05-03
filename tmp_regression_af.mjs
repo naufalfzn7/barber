@@ -154,7 +154,7 @@ async function jsonReq(path, options = {}) {
       body: JSON.stringify({
         branchId: branch.id,
         serviceId: service.id,
-        scheduledStart: now.toISOString(),
+        scheduledStart: '2026-04-29T05:00:00.000Z',
         walkInName: "Regression AF Cash",
       }),
     });
@@ -214,12 +214,12 @@ async function jsonReq(path, options = {}) {
       body: JSON.stringify({
         branchId: branch.id,
         serviceId: service.id,
-        scheduledStart: new Date(now.getTime() + 60 * 60 * 1000).toISOString(),
+        scheduledStart: '2026-04-29T07:00:00.000Z',
         walkInName: "Regression AF QRIS",
       }),
     });
     assert(
-      walkinQ.res.status === 201,
+      walkinQ.res.status === 201 || console.error(walkinQ.body),
       `F fail create walkin(qris) status=${walkinQ.res.status}`,
     );
     const qBookingId = walkinQ.body?.booking?.id;

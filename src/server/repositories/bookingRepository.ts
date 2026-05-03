@@ -755,7 +755,7 @@ export const bookingRepository = {
           );
         }
 
-        return null;
+        return { deleted: true as const };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );

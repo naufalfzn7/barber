@@ -56,8 +56,9 @@ Tanggal: 2026-04-04
 
 ### Payment
 
-- Xendit menggunakan QRIS dynamic per transaksi.
-- Jika QRIS gagal/expired, booking tetap pada status `PAYMENT_PENDING` dengan opsi retry.
+- Xendit menggunakan Checkout Link (Invoices API) terpusat untuk mendukung berbagai metode pembayaran (QRIS, Kartu Kredit, VA, e-Wallet, Retail Outlet).
+- Atribut `invoice_url` hasil integrasi disimpan ke kolom tabel database untuk mendukung UI di mana pengguna diarahkan (redirect) ke portal checkout Xendit.
+- Jika invoice gagal/expired, booking tetap pada status `PAYMENT_PENDING` dengan opsi retry atau ganti metode pembayaran.
 - Pembayaran cash wajib menyimpan `amount_due`, `amount_paid`, `change_amount`, `paid_at`, dan `cashier_id`.
 
 ### Inventory
@@ -387,30 +388,30 @@ Hasil Verifikasi Terakhir:
 
 ---
 
-## Section F - Payment Flow (QRIS/Cash)
+## Section F - Payment Flow (Xendit Invoices/Cash)
 
 Status: `DONE`
 
 Tujuan:
 
-- Menyelesaikan alur pembayaran setelah layanan selesai.
+- Menyelesaikan alur pembayaran setelah layanan selesai dengan berbagai pilihan alat pembayaran via Checkout Link.
 
 Task:
 
 - Endpoint `Selesaikan & Bayar`.
-- Integrasi Xendit QRIS per transaksi.
+- Integrasi Xendit Invoices API untuk men-generate checkout URL per transaksi yang mendukung QRIS, Kartu Kredit, Virtual Account, dan e-Wallet.
 - Cash payment confirmation + nominal.
-- Payment status synchronization.
+- Payment status synchronization via Webhook.
 - Bukti transaksi dan audit trail.
 
 Definition of Done:
 
-- Pembayaran QRIS/Cash valid dan tercatat.
+- Pembayaran via Xendit / Cash valid dan tercatat.
 - Booking selesai terhubung dengan payment completed.
 
 Verifikasi:
 
-- Sandbox test Xendit QRIS.
+- Sandbox test Xendit Invoices API (semua metode).
 - Integration test payment callbacks/webhook.
 
 Regresi wajib sebelum lanjut:
@@ -709,3 +710,117 @@ Regresi final:
 - Fokus awal eksekusi: Section C hanya boleh dimulai setelah A dan B benar-benar selesai.
 - Jika Section C belum `DONE`, section D-K tidak boleh disentuh.
 - Setelah setiap section `DONE_PENDING_REGRESSION`, jalankan regresi berjenjang sampai status `DONE`.
+
+---
+
+## Known Issues / Bugs Backlog (Section F - Payment)
+
+Status: `Untuk ditangani di Section K (Hardening & QA)`
+
+### 1. Tunnel Domain Sering Ter-Block oleh Antivirus/Firewall
+
+**Deskripsi:**
+
+- Domain tunnel gratis (seperti `lhr.life` dari `localhost.run`, `serveo.net`, atau `localtunnel`) sering ditandai sebagai **Phishing/Malware** oleh sistem Antivirus lokal (Windows Defender, Cisco Umbrella, OpenDNS, dsb).
+- Ketika user dibawa ke halaman sukses pembayaran di domain tunnel tersebut, browser menampilkan peringatan merah: `"This site is blocked due to a phishing threat"` dan user tidak bisa melanjutkan meskipun pembayaran sudah diproses di backend.
+- Tunnel gratis juga tidak stabil (sering disconnect tanpa pemberitahuan, URL berubah setiap kali reconnect).
+
+**Dampak:**
+
+- User experience terganggu; user ragu bahwa pembayaran mereka berhasil meskipun backend sudah ter-update.
+- Proses testing dan development menjadi cukup rumit.
+
+**Akar Penyebab:**
+
+- Layanan tunnel gratis umumnya dipakai untuk berbagai tujuan termasuk illicit, sehingga di-block secara blanket oleh antivirus.
+- Tidak ada kontrol yang jelas terhadap domain dan routing tunnel gratis.
+
+**Solusi Jangka Pendek (Dev Mode - Aktif Sekarang):**
+
+- Gunakan `APP_URL = "http://localhost:3000"` untuk success redirect (fallback ke local loopback), agar tidak perlu tunnel saat redirect.
+- Pastikan `XENDIT_CALLBACK_URL` tetap menggunakan domain tunnel publik (misalnya `https://488fd6b6c6b0b6.lhr.life/api/payments/webhook/xendit`) agar Xendit bisa mencapai webhook endpoint.
+- Hasilnya: Xendit webhook akan berhasil (server-to-server), tapi redirect ke user akan ke localhost (loopback local). Untuk testing, user perlu akses lokal laptop mereka atau setup VPN jika akses dari jarak jauh.
+
+**Solusi Jangka Panjang (Section K - Production Ready):**
+
+- Deploy ke VPS atau platform cloud (Vercel, Netlify, Railway, Render, dsb).
+- Gunakan domain publik permanent (misal `barber.yourdomain.com`).
+- Xendit webhook dan redirect kedua-duanya akan menggunakan domain produksi yang sudah terpercaya.
+- Tidak ada lagi phishing block karena domain adalah milik Anda sendiri dan sudah di-whitelist.
+
+**Tracking:**
+
+- Task: `Section K` > Prepare production deployment checklist > Replace tunnel dengan domain produksi.
+
+---
+
+### 2. Success Redirect URL Memakai Route Group Syntax (FIXED)
+
+**Status:** ✅ FIXED
+
+**Deskripsi (Historis):**
+
+- Sebelumnya, success redirect URL di-set ke `${env.appUrl}/(user)/reservasi`.
+- Di Next.js App Router, folder yang menggunakan tanda kurung `(user)` adalah **Route Groups** yang hanya berfungsi untuk mengatur file struktur dan tidak ditampilkan dalam URL browser.
+- Akibatnya, Xendit redirect ke URL yang tidak terbaca browser, sehingga halaman kosong atau 404.
+
+**Fix Diterapkan:**
+
+- Ubah URL redirect menjadi `${env.appUrl}/reservasi` (tanpa route group syntax).
+- File: `src/app/api/payments/deposit/route.ts`, `src/server/services/paymentService.ts`.
+
+**Testing Verifikasi:**
+
+- Webhook test dari Xendit Dashboard: `200 OK` ✅
+- Booking flow end-to-end: Menunggu payment success capture untuk verifikasi redirect.
+
+---
+
+### 3. Tunnel Connectivity Unstable (Gratis vs Paid Trade-off)
+
+**Deskripsi:**
+
+- Tunnel gratis sering disconnect tanpa notifikasi (exit code 255, connection reset).
+- Ketika tunnel disconnect, webhook Xendit tidak bisa mencapai backend → pembayaran gagal diproses.
+- Perlu manual reconnect dan update webhook URL di Xendit Dashboard.
+
+**Dampak:**
+
+- Development/testing tidak bisa berjalan lama tanpa supervision.
+- Jika tunnel disconnect tengah malam, sistem tidak akan memproses webhook apapun sampai tunnel di-restart.
+
+**Akar Penyebab:**
+
+- Tunnel gratis (localhost.run, serveo.net, ngrok free tier) memiliki uptime SLA rendah.
+- Tidak ada persistence atau load balancing.
+
+**Solusi:**
+
+- **Dev**: Restart tunnel setiap kali disconnect, atau gunakan monitor script yang auto-restart.
+- **Production**: Gunakan paid tunnel (ngrok pro) atau deploy ke cloud.
+
+**Workaround untuk Testing Sekarang:**
+
+- Gunakan `serveo.net` (lebih stabil daripada `lhr.life` / `localhost.run`).
+- Gunakan URL stabil: `https://bb0fea81534df8fd-114-10-44-106.serveousercontent.com/api/payments/webhook/xendit`.
+
+---
+
+### 4. Environment Variable Inconsistency (APP_URL vs XENDIT_CALLBACK_URL)
+
+**Deskripsi:**
+
+- `APP_URL` digunakan untuk success redirect (kini fallback ke localhost).
+- `XENDIT_CALLBACK_URL` digunakan untuk webhook (harus publik).
+- Dua variable ini sekarang bisa berbeda, yang mana bisa membingungkan saat deployment.
+
+**Dampak Rendah** (Info Only):
+
+- Jika lupa update salah satu saat deployment, bisa cause mismatch (contoh: redirect lokal tapi webhook broken, atau sebaliknya).
+
+**Mitigasi:**
+
+- Dokumentasikan dengan jelas di `.env.example` tentang perbedaan kedua variable.
+- Saat Section K, buat pre-deployment checklist yang verifikasi konsistensi kedua URL.
+
+---

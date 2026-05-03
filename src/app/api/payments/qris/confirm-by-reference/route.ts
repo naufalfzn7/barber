@@ -1,26 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { paymentRepository } from "@/server/repositories/paymentRepository";
 import { paymentService } from "@/server/services/paymentService";
-import { env } from "@/server/core/env";
 
 export async function POST(request: NextRequest) {
-  const auth = requireRole(request, ["ADMIN", "SUPER_ADMIN"]);
+  const auth = requireRole(request, ["ADMIN", "SUPER_ADMIN", "MEMBER"]);
   if (auth instanceof NextResponse) {
     return auth;
-  }
-
-  const isProduction =
-    process.env.NODE_ENV === "production" ||
-    env.appEnv.toLowerCase() === "production";
-
-  if (isProduction) {
-    return NextResponse.json(
-      {
-        message:
-          "Manual QRIS confirmation is disabled in production. Use official webhook callback.",
-      },
-      { status: 403 },
-    );
   }
 
   try {
@@ -33,6 +19,30 @@ export async function POST(request: NextRequest) {
         { message: "externalRef is required" },
         { status: 400 },
       );
+    }
+
+    const payment = await paymentRepository.findPaymentByExternalRef(
+      body.externalRef,
+    );
+
+    if (!payment) {
+      return NextResponse.json(
+        { message: "Payment reference not found" },
+        { status: 404 },
+      );
+    }
+
+    if (auth.role === "MEMBER") {
+      const booking = await paymentRepository.findBookingForPayment(
+        payment.bookingId,
+      );
+
+      if (!booking || booking.memberId !== auth.sub) {
+        return NextResponse.json(
+          { message: "Unauthorized - not your booking" },
+          { status: 403 },
+        );
+      }
     }
 
     const result = await paymentService.confirmQrisByReference({

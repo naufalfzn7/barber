@@ -1,78 +1,56 @@
-# Payment Test Scripts (QRIS)
+# Payment Test Scripts (Xendit Invoices)
 
-Dokumen ini berisi script siap pakai untuk tes alur pembayaran QRIS di environment lokal.
+Dokumen ini berisi script dan langkah tes untuk alur pembayaran Xendit Invoices/Checkout Link yang sekarang dipakai aplikasi.
 
-## Update: Sistem Pembayaran Member Baru
+## Ringkasan Flow Baru
 
-Sejak update terbaru, sistem pembayaran deposit untuk member telah ditingkatkan:
+1. Member membuat booking deposit dari halaman reservasi.
+2. Sistem membuat Xendit Invoice dan menampilkan tombol pembayaran menuju checkout link Xendit.
+3. Setelah pembayaran berhasil, Xendit redirect ke halaman khusus: `/reservasi/pembayaran-sukses`.
+4. Halaman sukses ini menampilkan pesan sekali saja, lalu auto kembali ke `/reservasi` setelah beberapa detik.
+5. Status booking dan payment tetap disinkronkan lewat webhook Xendit ke backend.
 
-- ✅ **Persistent Modal** - Modal pembayaran tetap bisa diakses setelah ditutup
-- ✅ **Retry QRIS** - Tombol retry untuk regenerate QR ketika expired/gagal
-- ✅ **Booking Status Persisten** - Booking tetap `PAYMENT_PENDING` sampai pembayaran selesai
-- ✅ **Copy QR String** - Tombol untuk menyalin QR string jika diperlukan
-- ✅ **Auto Polling** - Status pembayaran otomatis ter-update dalam 2 detik
-- ✅ **Better UI** - Layout lebih rapi dengan header, footer, dan status info
+## Perubahan yang Perlu Diingat
 
-### Flow Member Booking Baru
-
-1. Member membuat booking baru
-2. Modal pembayaran deposit otomatis muncul
-3. Member bisa scan QR atau tutup modal (booking tetap pending)
-4. Di halaman riwayat booking:
-   - **Booking PAYMENT_PENDING** → Muncul tombol **"💳 BAYAR"** (warna merah)
-   - **Booking COMPLETED** → Muncul tombol **"🧾 LIHAT NOTA"** (warna hijau)
-5. Klik "💳 BAYAR" untuk membuka modal pembayaran kembali
-6. Jika QR expired, bisa klik "Retry QRIS" untuk regenerate
-7. Setelah dibayar, booking auto berubah ke `COMPLETED`
-8. Untuk booking COMPLETED, klik "🧾 LIHAT NOTA" untuk lihat detail pembayaran dan print nota
-
-### Receipt (Nota) Features
-
-- **View Receipt** - Lihat detail pembayaran lengkap termasuk item, total, metode pembayaran
-- **Print Receipt** - Cetak nota untuk arsip atau bukti pembayaran
-- **Available Only for COMPLETED** - Nota hanya bisa diakses setelah booking selesai (COMPLETED)
+- Tidak ada lagi alur QR code image sebagai sumber utama pembayaran.
+- `invoice_url` dari Xendit dipakai sebagai link checkout.
+- Redirect sukses tidak lagi mengarah ke halaman booking biasa, supaya tidak muncul dua pop-up sukses sekaligus.
+- Halaman admin reservasi tetap bisa memantau status payment, tetapi tidak lagi menampilkan modal sukses QRIS dari polling.
 
 ## 1. Prasyarat
 
 - Jalankan app dulu: `npm run dev`
-- Cek port aktif dari log Next.js (contoh: `3001` jika `3000` sedang dipakai).
-- Pastikan booking sudah `PAYMENT_PENDING` dan punya `Reference` QRIS dari modal admin reservasi.
+- Pastikan `APP_URL` dan `XENDIT_CALLBACK_URL` sudah benar di `.env`.
+- Pastikan booking target sudah punya invoice Xendit yang aktif.
 
-## 2. Set Variabel (Git Bash)
+## 2. Setup Variabel Tes
 
-Ganti `PORT` dan `REF` sesuai kondisi tes kamu.
+Gunakan booking/payment reference yang benar dari environment lokal kamu.
 
 ```bash
-PORT=3001
-REF="DEPOSIT-BKG-1777249227215-352361-1777249228287"
+PORT=3000
+REF="DEPOSIT-BKG-1777251800428-696639-1777251801239"
 TOKEN=$(sed -n 's/^XENDIT_WEBHOOK_TOKEN="\(.*\)"/\1/p' .env | head -n 1)
 ```
 
-## 3. Simulasi Pembayaran Berhasil (PAID)
+`REF` di atas harus sama dengan `externalRef` atau `reference_id` invoice yang sedang kamu uji.
 
-curl -i -X POST "http://127.0.0.1:${PORT}/api/payments/webhook/xendit" \
- -H "Content-Type: application/json" \
- -H "x-callback-token: ${TOKEN}" \
-  -d '{
-    "reference_id": "'"${REF}"'",
-"status": "PAID",
-"paid_at": "2026-04-05T10:00:00.000Z"
-}'
+## 3. Simulasi Pembayaran Berhasil
+
+Pakai ini untuk mensimulasikan event `PAID` dari Xendit webhook.
 
 ```bash
-
 curl -i -X POST "http://127.0.0.1:${PORT}/api/payments/webhook/xendit" \
   -H "Content-Type: application/json" \
   -H "x-callback-token: ${TOKEN}" \
-  -d "{\"reference_id\":\"${REF}\",\"status\":\"PAID\",\"paid_at\":\"2026-04-05T10:00:00.000Z\"}"
-
+  -d "{\"reference_id\":\"${REF}\",\"status\":\"PAID\",\"paid_at\":\"$(date -u +%Y-%m-%dT%H:%M:%S.000Z)\"}"
 ```
 
 Expected:
 
 - HTTP `200`
 - `message: "Webhook processed"`
-- Dalam 4-5 detik (polling UI), booking berubah ke `COMPLETED`.
+- Booking berubah menjadi `COMPLETED` setelah sinkronisasi backend.
 
 ## 4. Simulasi Gagal / Kadaluarsa
 
@@ -96,17 +74,16 @@ curl -i -X POST "http://127.0.0.1:${PORT}/api/payments/webhook/xendit" \
 
 Expected:
 
-- Status payment jadi `EXPIRED` atau `FAILED`.
-- Tombol `Retry QRIS` di modal aktif.
+- Status payment menjadi `EXPIRED` atau `FAILED`.
+- Booking tetap di `PAYMENT_PENDING` sampai user retry atau bayar ulang.
 
 ## 5. Cek Status Payment per Booking
 
-Ganti `BOOKING_ID` dengan id booking (bukan booking code).
+Ganti `BOOKING_ID` dengan id booking, bukan booking code.
 
 ```bash
 BOOKING_ID="cmnl2kcxf0000usvopru0wpfa"
-curl -i "http://127.0.0.1:${PORT}/api/payments/booking/${BOOKING_ID}" \
-  -H "Cookie: accessToken=ISI_ACCESS_TOKEN_JIKA_DIPERLUKAN"
+curl -i "http://127.0.0.1:${PORT}/api/payments/booking/${BOOKING_ID}"
 ```
 
 Catatan:
@@ -114,31 +91,9 @@ Catatan:
 - Endpoint ini butuh sesi login `ADMIN` atau `SUPER_ADMIN`.
 - Paling mudah cek dari browser yang sudah login, via Network tab.
 
-## 6. Retry QRIS via API (Opsional)
+## 6. Retry Pembayaran Xendit
 
-Ganti `PAYMENT_ID` dengan id payment saat status `EXPIRED`/`FAILED`.
-
-```bash
-PAYMENT_ID="cmnl2l5i10004usvo5nd9v5sr"
-curl -i -X POST "http://127.0.0.1:${PORT}/api/payments/qris/retry" \
-  -H "Content-Type: application/json" \
-  -H "Cookie: accessToken=ISI_ACCESS_TOKEN_JIKA_DIPERLUKAN" \
-  -d "{\"paymentId\":\"${PAYMENT_ID}\"}"
-```
-
-Expected:
-
-- HTTP `200`
-- `message: "QRIS payment retried"`
-- QR string/reference baru dihasilkan.
-
-## 6. Retry QRIS via API (Member bisa retry langsung)
-
-Sebelumnya retry QRIS hanya untuk ADMIN/SUPER_ADMIN. Sekarang MEMBER juga bisa retry pembayaran mereka sendiri.
-
-Ganti `PAYMENT_ID` dengan id payment saat status `EXPIRED`/`FAILED`.
-
-Member bisa langsung click tombol "Retry QRIS" di modal pembayaran deposit, atau via API:
+Jika payment expired atau gagal, gunakan endpoint retry sesuai `paymentId`.
 
 ```bash
 PAYMENT_ID="cmnl2l5i10004usvo5nd9v5sr"
@@ -152,18 +107,32 @@ Expected:
 
 - HTTP `200`
 - `message: "QRIS payment retried"`
-- QR string/reference baru dihasilkan
-- Member hanya bisa retry pembayaran mereka sendiri (verified at endpoint layer)
+- Invoice/checkout link baru dihasilkan.
 
-## 7. Quick One-Liner (PAID)
+## 7. Verifikasi Halaman Sukses Redirect
 
-```bash
-TOKEN=$(sed -n 's/^XENDIT_WEBHOOK_TOKEN="\(.*\)"/\1/p' .env | head -n 1) && curl -i -X POST "http://127.0.0.1:3001/api/payments/webhook/xendit" -H "Content-Type: application/json" -H "x-callback-token: ${TOKEN}" -d '{"reference_id":"QRIS-702567890431-MNL2L57K","status":"PAID","paid_at":"2026-04-05T10:00:00.000Z"}'
+Kalau payment sukses dan user dikirim ke Xendit redirect page, URL yang diharapkan adalah:
+
+```text
+/reservasi/pembayaran-sukses?xendit_ref=...&xendit_status=paid
 ```
 
-## 8. Troubleshooting Cepat
+Di halaman itu, user akan melihat pesan:
+
+- `Pembayaran berhasil!`
+- Booking reference yang terkonfirmasi
+- Pop-up menutup otomatis lalu kembali ke `/reservasi`
+
+## 8. Quick One-Liner (PAID)
+
+```bash
+TOKEN=$(sed -n 's/^XENDIT_WEBHOOK_TOKEN="\(.*\)"/\1/p' .env | head -n 1) && curl -i -X POST "http://127.0.0.1:3000/api/payments/webhook/xendit" -H "Content-Type: application/json" -H "x-callback-token: ${TOKEN}" -d '{"reference_id":"QRIS-702567890431-MNL2L57K","status":"PAID","paid_at":"2026-04-05T10:00:00.000Z"}'
+```
+
+## 9. Troubleshooting Cepat
 
 - `401 Invalid webhook token`: token header tidak cocok dengan `.env`.
-- `Payment reference not found`: reference QRIS salah atau belum tercatat.
-- UI tidak berubah: pastikan page admin reservasi terbuka dan tunggu interval polling 4-5 detik.
+- `Payment reference not found`: reference belum tercatat atau salah.
+- UI tidak berubah: pastikan halaman booking/admin masih terbuka dan tunggu polling backend.
+- Halaman sukses tidak muncul: cek `APP_URL` dan `success_redirect_url` invoice mengarah ke `/reservasi/pembayaran-sukses`.
 - Port salah: cek log `next dev`, gunakan port yang sedang aktif.

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   formatIndonesianDateTime,
@@ -42,6 +43,23 @@ type MemberHistoryItem = {
   payment?: { status: string; isDeposit: boolean } | null;
 };
 
+function formatExpiryDateTime(isoString: string) {
+  try {
+    const date = new Date(isoString);
+    return new Intl.DateTimeFormat("id-ID", {
+      weekday: "long",
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Asia/Jakarta",
+    }).format(date);
+  } catch {
+    return "";
+  }
+}
+
 function getRemainingLabel(expiresAt?: string | null) {
   if (!expiresAt) {
     return null;
@@ -52,11 +70,33 @@ function getRemainingLabel(expiresAt?: string | null) {
     return "Kadaluarsa";
   }
 
-  const minutes = Math.ceil(remainingMs / (60 * 1000));
-  return `${minutes} menit lagi`;
+  return `Bayar sebelum: ${formatExpiryDateTime(expiresAt)}`;
+}
+
+function getPaymentLabel(
+  expiresAt?: string | null,
+  paymentStatus?: string | null,
+) {
+  const normalizedStatus = paymentStatus?.toUpperCase() ?? "";
+
+  if (normalizedStatus === "EXPIRED") {
+    return "Kadaluarsa";
+  }
+
+  if (normalizedStatus === "FAILED") {
+    return "Pembayaran gagal";
+  }
+
+  if (normalizedStatus === "PAID") {
+    return "Lunas";
+  }
+
+  return getRemainingLabel(expiresAt);
 }
 
 export default function MemberBookingPanel() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [role, setRole] = useState<"MEMBER" | "ADMIN" | "SUPER_ADMIN" | null>(
     null,
   );
@@ -115,6 +155,15 @@ export default function MemberBookingPanel() {
     const dd = String(today.getDate()).padStart(2, "0");
     setDate(`${yyyy}-${mm}-${dd}`);
   }, []);
+
+  useEffect(() => {
+    const xenditRef = searchParams.get("xendit_ref");
+    const xenditStatus = searchParams.get("xendit_status");
+
+    if (xenditRef && xenditStatus === "paid") {
+      router.replace(`/reservasi/pembayaran-sukses?${searchParams.toString()}`);
+    }
+  }, [router, searchParams]);
 
   useEffect(() => {
     async function bootstrap() {
@@ -216,7 +265,9 @@ export default function MemberBookingPanel() {
         query.set("barbermanId", barbermanId);
       }
 
-      const response = await fetch(`/api/bookings/slots?${query.toString()}`);
+      const response = await fetch(`/api/bookings/slots?${query.toString()}`, {
+        cache: "no-store",
+      });
       const data = (await response.json()) as {
         slots?: Array<{ start: string; end: string }>;
         message?: string;
@@ -297,7 +348,7 @@ export default function MemberBookingPanel() {
     setHistoryLoading(true);
 
     try {
-      const response = await fetch("/api/bookings/my");
+      const response = await fetch("/api/bookings/my", { cache: "no-store" });
       const data = (await response.json()) as {
         bookings?: MemberHistoryItem[];
       };
@@ -309,13 +360,23 @@ export default function MemberBookingPanel() {
       setHistoryLoading(false);
     }
   }
+  useEffect(() => {
+    const handler = () => {
+      void loadHistory();
+    };
+
+    window.addEventListener("bookings:changed", handler);
+    return () => window.removeEventListener("bookings:changed", handler);
+  }, []);
 
   async function openReceipt(bookingId: string) {
     try {
       setLoadingReceipt(true);
       setError(null);
 
-      const response = await fetch(`/api/payments/receipt/${bookingId}`);
+      const response = await fetch(`/api/payments/receipt/${bookingId}`, {
+        cache: "no-store",
+      });
       const json = (await response.json()) as {
         message?: string;
         receipt?: any;
@@ -359,6 +420,9 @@ export default function MemberBookingPanel() {
       }
 
       setMessage("Reservasi berhasil dibatalkan");
+      // Update local history immediately and notify other components
+      setHistory((prev) => prev.filter((h) => h.id !== bookingId));
+      window.dispatchEvent(new Event("bookings:changed"));
       await loadHistory();
       await loadSlots();
     } catch (err) {
@@ -633,9 +697,14 @@ export default function MemberBookingPanel() {
           )}
 
           {history.map((item) => {
-            const isPending = item.status === "PAYMENT_PENDING";
+            const paymentStatus = item.payment?.status ?? item.status;
+            const isPending =
+              item.status === "PAYMENT_PENDING" || paymentStatus === "PENDING";
+            const paymentLabel = getPaymentLabel(
+              item.pendingExpiresAt,
+              paymentStatus,
+            );
             const isCompleted = item.status === "COMPLETED";
-            const remainingLabel = getRemainingLabel(item.pendingExpiresAt);
 
             return (
               <div key={item.id} className="border border-black/10 p-4">
@@ -654,11 +723,14 @@ export default function MemberBookingPanel() {
                     <p className="text-xs text-black/70 mt-2">
                       {item.branch.name} - {item.phase}
                     </p>
-                    {isPending && remainingLabel && (
-                      <p className="text-xs text-red-600 mt-1 font-semibold">
-                        Batas bayar: {remainingLabel}
-                      </p>
-                    )}
+                    {(paymentStatus === "PENDING" ||
+                      paymentStatus === "EXPIRED" ||
+                      paymentStatus === "FAILED") &&
+                      paymentLabel && (
+                        <p className="text-xs text-red-600 mt-1 font-semibold">
+                          {paymentLabel}
+                        </p>
+                      )}
                   </div>
 
                   <div className="flex flex-col gap-2 items-end">
