@@ -671,6 +671,83 @@ export const superadminService = {
     });
   },
 
+  async createBranch(input: { code: string; name: string; timezone?: string }) {
+    const codeExists = await prisma.branch.findUnique({
+      where: { code: input.code },
+    });
+    if (codeExists) {
+      throw new Error("Branch code already exists");
+    }
+
+    return prisma.branch.create({
+      data: {
+        code: input.code.toUpperCase(),
+        name: input.name,
+        timezone: input.timezone ?? "Asia/Jakarta",
+        isActive: true,
+      },
+    });
+  },
+
+  async updateBranch(input: {
+    branchId: string;
+    name?: string;
+    timezone?: string;
+    isActive?: boolean;
+  }) {
+    const branch = await prisma.branch.findUnique({
+      where: { id: input.branchId },
+    });
+    if (!branch) {
+      throw new Error("Branch not found");
+    }
+
+    return prisma.branch.update({
+      where: { id: input.branchId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.timezone !== undefined ? { timezone: input.timezone } : {}),
+        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
+      },
+    });
+  },
+
+  async deleteBranch(branchId: string) {
+    const branch = await prisma.branch.findUnique({
+      where: { id: branchId },
+      include: {
+        users: true,
+        barbermen: true,
+        services: true,
+        bookings: true,
+      },
+    });
+
+    if (!branch) {
+      throw new Error("Branch not found");
+    }
+
+    if (branch.users.length > 0) {
+      throw new Error("Cannot delete branch with associated users");
+    }
+
+    if (branch.barbermen.length > 0) {
+      throw new Error("Cannot delete branch with associated barbermen");
+    }
+
+    if (branch.services.length > 0) {
+      throw new Error("Cannot delete branch with associated services");
+    }
+
+    if (branch.bookings.length > 0) {
+      throw new Error("Cannot delete branch with associated bookings");
+    }
+
+    return prisma.branch.delete({
+      where: { id: branchId },
+    });
+  },
+
   async reports(branchId?: string, range?: string) {
     const [overview, monthlyRevenue] = await Promise.all([
       loadBranchSummaries(range),

@@ -53,36 +53,185 @@ function formatRupiah(value: number) {
   }).format(value);
 }
 
+type FormMode = "create" | "edit" | null;
+type EditingBranch = {
+  id: string;
+  code: string;
+  name: string;
+  timezone: string;
+  isActive: boolean;
+};
+
 export default function CabangPage() {
   const [data, setData] = useState<BranchResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
 
-  useToastFeedback({ error });
+  const [formMode, setFormMode] = useState<FormMode>(null);
+  const [editingBranch, setEditingBranch] = useState<EditingBranch | null>(
+    null,
+  );
+  const [formData, setFormData] = useState({
+    code: "",
+    name: "",
+    timezone: "Asia/Jakarta",
+    isActive: true,
+  });
+  const [submitting, setSubmitting] = useState(false);
+
+  useToastFeedback({ error, success });
+
+  const loadBranches = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch("/api/superadmin/branches");
+      const json = (await response.json()) as BranchResponse & {
+        message?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal memuat cabang");
+      }
+
+      setData(json);
+      setError(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Gagal memuat cabang";
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true);
-        const response = await fetch("/api/superadmin/branches");
-        const json = (await response.json()) as BranchResponse & {
-          message?: string;
-        };
+    void loadBranches();
+  }, []);
 
-        if (!response.ok) {
-          throw new Error(json.message ?? "Gagal memuat cabang");
-        }
+  const handleOpenCreateForm = () => {
+    setFormData({
+      code: "",
+      name: "",
+      timezone: "Asia/Jakarta",
+      isActive: true,
+    });
+    setEditingBranch(null);
+    setFormMode("create");
+  };
 
-        setData(json);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Gagal memuat cabang");
-      } finally {
-        setLoading(false);
-      }
+  const handleOpenEditForm = (branch: BranchSummary) => {
+    setEditingBranch({
+      id: branch.branchId,
+      code: branch.branchCode,
+      name: branch.branchName,
+      timezone: branch.timezone,
+      isActive: branch.isActive,
+    });
+    setFormData({
+      code: branch.branchCode,
+      name: branch.branchName,
+      timezone: branch.timezone,
+      isActive: branch.isActive,
+    });
+    setFormMode("edit");
+  };
+
+  const handleCloseForm = () => {
+    setFormMode(null);
+    setEditingBranch(null);
+    setFormData({
+      code: "",
+      name: "",
+      timezone: "Asia/Jakarta",
+      isActive: true,
+    });
+  };
+
+  const handleSubmitForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.code.trim() || !formData.name.trim()) {
+      setError("Code dan Name harus diisi");
+      return;
     }
 
-    void load();
-  }, []);
+    setSubmitting(true);
+    try {
+      if (formMode === "create") {
+        const response = await fetch("/api/superadmin/branches", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            code: formData.code.trim(),
+            name: formData.name.trim(),
+            timezone: formData.timezone,
+          }),
+        });
+
+        const json = (await response.json()) as { message?: string };
+        if (!response.ok) {
+          throw new Error(json.message ?? "Gagal membuat cabang");
+        }
+
+        setSuccess("Cabang berhasil dibuat");
+        handleCloseForm();
+        await loadBranches();
+      } else if (formMode === "edit" && editingBranch) {
+        const response = await fetch(
+          `/api/superadmin/branches/${editingBranch.id}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: formData.name.trim(),
+              timezone: formData.timezone,
+              isActive: formData.isActive,
+            }),
+          },
+        );
+
+        const json = (await response.json()) as { message?: string };
+        if (!response.ok) {
+          throw new Error(json.message ?? "Gagal mengupdate cabang");
+        }
+
+        setSuccess("Cabang berhasil diupdate");
+        handleCloseForm();
+        await loadBranches();
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Operasi gagal";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDeleteBranch = async (branchId: string, branchName: string) => {
+    if (!confirm(`Yakin hapus cabang "${branchName}"?`)) {
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const response = await fetch(`/api/superadmin/branches/${branchId}`, {
+        method: "DELETE",
+      });
+
+      const json = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal menghapus cabang");
+      }
+
+      setSuccess("Cabang berhasil dihapus");
+      await loadBranches();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Operasi gagal";
+      setError(msg);
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   const sortedBranches = useMemo(
     () => [...(data?.branches ?? [])].sort((a, b) => b.revenue - a.revenue),
@@ -98,8 +247,16 @@ export default function CabangPage() {
             Monitoring cabang, kapasitas kru, dan performa harian dari database.
           </p>
         </div>
-        <div className="text-xs text-gray-500 px-3 py-1 rounded-full bg-gray-100">
-          Tanggal {data?.date ? formatIndonesianDate(data.date) : "-"}
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-gray-500 px-3 py-1 rounded-full bg-gray-100">
+            Tanggal {data?.date ? formatIndonesianDate(data.date) : "-"}
+          </div>
+          <button
+            onClick={handleOpenCreateForm}
+            className="px-4 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-lg hover:bg-emerald-700 transition"
+          >
+            + Tambah Cabang
+          </button>
         </div>
       </div>
 
@@ -214,16 +371,128 @@ export default function CabangPage() {
                   </div>
                 </div>
 
-                <div className="border-t border-gray-100 pt-3 space-y-2 text-xs text-gray-600">
+                <div className="border-t border-gray-100 pt-3 space-y-2 text-xs text-gray-600 mb-4">
                   <p>Total booking: {branch.totalBookings}</p>
                   <p>Selesai: {branch.completedBookings}</p>
                   <p>Pendapatan: {formatRupiah(branch.revenue)}</p>
                   <p>Top service: {branch.topService}</p>
                 </div>
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleOpenEditForm(branch)}
+                    className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 text-xs font-semibold rounded-lg hover:bg-blue-100 transition"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() =>
+                      handleDeleteBranch(branch.branchId, branch.branchName)
+                    }
+                    disabled={submitting}
+                    className="flex-1 px-3 py-2 bg-red-50 text-red-600 text-xs font-semibold rounded-lg hover:bg-red-100 transition disabled:opacity-50"
+                  >
+                    Hapus
+                  </button>
+                </div>
               </div>
             ))}
           </div>
         </>
+      )}
+
+      {/* Modal Form */}
+      {formMode && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-xl max-w-sm w-full p-6 shadow-lg">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">
+              {formMode === "create" ? "Tambah Cabang Baru" : "Edit Cabang"}
+            </h3>
+
+            <form onSubmit={handleSubmitForm} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Code Cabang
+                </label>
+                <input
+                  type="text"
+                  value={formData.code}
+                  onChange={(e) =>
+                    setFormData({ ...formData, code: e.target.value })
+                  }
+                  disabled={formMode === "edit"}
+                  placeholder="e.g., SKA"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm disabled:bg-gray-50"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Nama Cabang
+                </label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                  placeholder="e.g., Surakarta"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Timezone
+                </label>
+                <input
+                  type="text"
+                  value={formData.timezone}
+                  onChange={(e) =>
+                    setFormData({ ...formData, timezone: e.target.value })
+                  }
+                  placeholder="e.g., Asia/Jakarta"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                />
+              </div>
+
+              {formMode === "edit" && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isActive"
+                    checked={formData.isActive}
+                    onChange={(e) =>
+                      setFormData({ ...formData, isActive: e.target.checked })
+                    }
+                    className="rounded"
+                  />
+                  <label htmlFor="isActive" className="text-sm text-gray-700">
+                    Aktif
+                  </label>
+                </div>
+              )}
+
+              <div className="flex gap-2 pt-4">
+                <button
+                  type="button"
+                  onClick={handleCloseForm}
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 text-sm font-semibold rounded-lg hover:bg-gray-50 transition disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="flex-1 px-4 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition disabled:opacity-50"
+                >
+                  {submitting ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
