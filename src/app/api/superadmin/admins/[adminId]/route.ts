@@ -45,3 +45,29 @@ export async function PATCH(
     return NextResponse.json({ message }, { status: 400 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ adminId: string }> },
+) {
+  const auth = requireRole(request, ["SUPER_ADMIN"]);
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
+  try {
+    const { adminId } = await context.params;
+    await superadminService.deleteAdmin(adminId);
+
+    return NextResponse.json(
+      {
+        message: "Admin deleted successfully",
+      },
+      { status: 200 },
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to delete admin";
+    return NextResponse.json({ message }, { status: 400 });
+  }
+}

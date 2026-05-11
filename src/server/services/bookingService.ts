@@ -342,6 +342,7 @@ export const bookingService = {
       start: string;
       end: string;
       availableBarberIds: string[];
+      isAvailable: boolean;
     }> = [];
 
     for (
@@ -353,6 +354,7 @@ export const bookingService = {
       const slotEnd = toDateAtMinutes(dateStart, cursor + serviceTotalMinutes);
 
       const availableBarberIds: string[] = [];
+      const unavailableReasons: string[] = [];
 
       for (const barberman of barbermen) {
         const blockedByHoliday = holidays.some((holiday) =>
@@ -365,6 +367,7 @@ export const bookingService = {
         );
 
         if (blockedByHoliday) {
+          unavailableReasons.push(`${barberman.name} - Hari libur`);
           continue;
         }
 
@@ -381,6 +384,7 @@ export const bookingService = {
             slotEndMinutes: cursor + serviceTotalMinutes,
           })
         ) {
+          unavailableReasons.push(`${barberman.name} - Diluar jam kerja`);
           continue;
         }
 
@@ -393,16 +397,17 @@ export const bookingService = {
 
         if (overlaps.length === 0) {
           availableBarberIds.push(barberman.id);
+        } else {
+          unavailableReasons.push(`${barberman.name} - Sudah dipesan`);
         }
       }
 
-      if (availableBarberIds.length > 0) {
-        slots.push({
-          start: slotStart.toISOString(),
-          end: slotEnd.toISOString(),
-          availableBarberIds,
-        });
-      }
+      slots.push({
+        start: slotStart.toISOString(),
+        end: slotEnd.toISOString(),
+        availableBarberIds,
+        isAvailable: availableBarberIds.length > 0,
+      });
     }
 
     return { date: input.date, slots };

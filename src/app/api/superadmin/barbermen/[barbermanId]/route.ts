@@ -43,3 +43,29 @@ export async function PATCH(
     return NextResponse.json({ message }, { status: 400 });
   }
 }
+
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ barbermanId: string }> },
+) {
+  const auth = requireRole(request, ["SUPER_ADMIN"]);
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
+  try {
+    const { barbermanId } = await context.params;
+    await superadminService.deleteBarberman(barbermanId);
+
+    return NextResponse.json(
+      {
+        message: "Barberman deleted successfully",
+      },
+      { status: 200 },
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to delete barberman";
+    return NextResponse.json({ message }, { status: 400 });
+  }
+}

@@ -192,4 +192,10 @@ export const userRepository = {
       },
     });
   },
+
+  deleteAdmin(adminId: string) {
+    return prisma.user.delete({
+      where: { id: adminId },
+    });
+  },
 };

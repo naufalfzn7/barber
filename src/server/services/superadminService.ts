@@ -748,6 +748,36 @@ export const superadminService = {
     });
   },
 
+  async deleteAdmin(adminId: string) {
+    const admin = await userRepository.findAdminById(adminId);
+    if (!admin) {
+      throw new Error("Admin not found");
+    }
+
+    return userRepository.deleteAdmin(adminId);
+  },
+
+  async deleteBarberman(barbermanId: string) {
+    const barberman = await prisma.barberman.findUnique({
+      where: { id: barbermanId },
+      include: {
+        bookings: true,
+      },
+    });
+
+    if (!barberman) {
+      throw new Error("Barberman not found");
+    }
+
+    if (barberman.bookings.length > 0) {
+      throw new Error("Cannot delete barberman with existing bookings");
+    }
+
+    return prisma.barberman.delete({
+      where: { id: barbermanId },
+    });
+  },
+
   async reports(branchId?: string, range?: string) {
     const [overview, monthlyRevenue] = await Promise.all([
       loadBranchSummaries(range),

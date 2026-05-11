@@ -28,48 +28,6 @@ export const pageRulesByScope: Record<RuleScope, RuleRoute[]> = {
         ],
       },
     },
-    {
-      path: "/contact",
-      rule: {
-        title: "Kontak",
-        usage: [
-          "Gunakan kanal kontak resmi untuk pertanyaan non-transaksional.",
-          "Sertakan detail cabang saat meminta bantuan.",
-        ],
-        forbidden: [
-          "Jangan kirim data sensitif seperti password lewat kanal umum.",
-          "Jangan gunakan halaman kontak untuk bypass proses booking.",
-        ],
-      },
-    },
-    {
-      path: "/surakarta",
-      rule: {
-        title: "Profil Cabang Surakarta",
-        usage: [
-          "Lihat detail cabang sebelum melakukan reservasi.",
-          "Pastikan cabang sesuai lokasi yang diinginkan.",
-        ],
-        forbidden: [
-          "Jangan menganggap data slot tersedia dari halaman profil cabang.",
-          "Jangan melewatkan verifikasi jadwal saat booking.",
-        ],
-      },
-    },
-    {
-      path: "/yogyakarta",
-      rule: {
-        title: "Profil Cabang Yogyakarta",
-        usage: [
-          "Gunakan halaman ini untuk memahami layanan cabang Yogyakarta.",
-          "Lanjutkan ke reservasi agar dapat data slot aktual.",
-        ],
-        forbidden: [
-          "Jangan mengasumsikan ketersediaan barber dari halaman profil saja.",
-          "Jangan memproses booking manual di luar sistem.",
-        ],
-      },
-    },
   ],
   admin: [
     {

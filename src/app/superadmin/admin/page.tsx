@@ -57,6 +57,8 @@ export default function AdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<FormState>(initialForm);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useToastFeedback({ message, error });
 
@@ -224,6 +226,29 @@ export default function AdminPage() {
     }
   }
 
+  async function deleteAdmin(adminId: string) {
+    try {
+      setDeleting(true);
+      setError(null);
+      setMessage(null);
+      const response = await fetch(`/api/superadmin/admins/${adminId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal hapus admin");
+      }
+      setMessage("Admin berhasil dihapus");
+      setDeletingId(null);
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal hapus admin");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <div className="p-4 lg:p-6 space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -352,6 +377,12 @@ export default function AdminPage() {
               >
                 {admin.isActive ? "Nonaktifkan" : "Aktifkan"}
               </button>
+              <button
+                onClick={() => setDeletingId(admin.id)}
+                className="flex-1 text-xs px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
+              >
+                Hapus
+              </button>
             </div>
           </div>
         ))}
@@ -467,6 +498,34 @@ export default function AdminPage() {
                 className="flex-1 px-4 py-2 text-xs font-semibold text-white bg-black rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
               >
                 {saving ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deletingId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl space-y-4">
+            <h3 className="text-lg font-bold text-gray-900">Hapus Admin</h3>
+            <p className="text-sm text-gray-600">
+              Apakah Anda yakin ingin menghapus admin ini? Tindakan ini tidak
+              dapat dibatalkan.
+            </p>
+            <div className="flex items-center gap-2 pt-3">
+              <button
+                onClick={() => setDeletingId(null)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 text-xs font-semibold text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => deleteAdmin(deletingId)}
+                disabled={deleting}
+                className="flex-1 px-4 py-2 text-xs font-semibold text-white bg-red-600 rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {deleting ? "Menghapus..." : "Hapus"}
               </button>
             </div>
           </div>

@@ -106,7 +106,14 @@ export default function MemberBookingPanel() {
   const [barbermanId, setBarbermanId] = useState("");
   const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [slots, setSlots] = useState<Array<{ start: string; end: string }>>([]);
+  const [slots, setSlots] = useState<
+    Array<{
+      start: string;
+      end: string;
+      isAvailable?: boolean;
+      availableBarberIds?: string[];
+    }>
+  >([]);
   const [selectedStart, setSelectedStart] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -642,21 +649,31 @@ export default function MemberBookingPanel() {
               Pilih Slot
             </p>
             <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
-              {slots.map((slot) => {
+              {slots.map((slot: any) => {
                 const label = formatIndonesianTime(slot.start);
+                const isAvailable = slot.isAvailable ?? true;
 
                 return (
                   <button
                     key={slot.start}
                     type="button"
-                    onClick={() => setSelectedStart(slot.start)}
-                    className={`border px-3 py-2 text-xs font-semibold ${
-                      selectedStart === slot.start
-                        ? "bg-black text-white border-black"
-                        : "bg-white text-black border-black/20"
+                    onClick={() => isAvailable && setSelectedStart(slot.start)}
+                    disabled={!isAvailable}
+                    className={`border px-3 py-2 text-xs font-semibold relative group transition-all ${
+                      !isAvailable
+                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                        : selectedStart === slot.start
+                          ? "bg-black text-white border-black"
+                          : "bg-white text-black border-black/20 hover:border-black/40"
                     }`}
+                    title={!isAvailable ? "Sudah dipesan" : ""}
                   >
-                    {label}
+                    <span>{label}</span>
+                    {!isAvailable && (
+                      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-50 rounded">
+                        Sudah dipesan
+                      </span>
+                    )}
                   </button>
                 );
               })}
