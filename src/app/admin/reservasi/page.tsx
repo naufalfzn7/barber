@@ -1,9 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import Swal from "sweetalert2";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 import { formatIndonesianDateTime } from "@/lib/dateFormat";
 import PaymentSuccessModal from "@/components/ui/PaymentSuccessModal";
+import { authFetch } from "@/lib/authClient";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 
@@ -256,7 +261,7 @@ export default function ReservasiPage() {
     async function bootstrap() {
       try {
         setLoading(true);
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await authFetch("/api/auth/me");
         const me = (await meRes.json()) as {
           user?: { role?: Role; branchId?: string | null };
           message?: string;
@@ -268,7 +273,7 @@ export default function ReservasiPage() {
 
         setRole(me.user.role);
 
-        const catalogRes = await fetch("/api/bookings/catalog");
+        const catalogRes = await authFetch("/api/bookings/catalog");
         const catalogJson = (await catalogRes.json()) as {
           branches?: CatalogBranch[];
           message?: string;
@@ -310,12 +315,6 @@ export default function ReservasiPage() {
     [data?.bookings, productModal?.bookingId],
   );
 
-  const bookingMap = useMemo(
-    () =>
-      new Map((data?.bookings ?? []).map((booking) => [booking.id, booking])),
-    [data?.bookings],
-  );
-
   useEffect(() => {
     if (!selectedBranch) {
       setWalkInServiceId("");
@@ -349,7 +348,7 @@ export default function ReservasiPage() {
           query.set("branchId", branchId);
         }
 
-        const response = await fetch(
+        const response = await authFetch(
           `/api/inventory/items${query.toString() ? `?${query.toString()}` : ""}`,
         );
         const json = (await response.json()) as {
@@ -376,7 +375,7 @@ export default function ReservasiPage() {
     }
 
     void loadProductCatalog();
-  }, [branchId, role]);
+  }, [branchId, role, selectedProductId]);
 
   const loadDashboard = useCallback(async () => {
     if (!branchId || !date) {
@@ -392,7 +391,7 @@ export default function ReservasiPage() {
         query.set("branchId", branchId);
       }
 
-      const response = await fetch(
+      const response = await authFetch(
         `/api/bookings/admin/today?${query.toString()}`,
       );
       const json = (await response.json()) as DashboardResponse & {
@@ -501,12 +500,25 @@ export default function ReservasiPage() {
       return;
     }
 
+    const selectedProduct = productCatalog.find(
+      (item) => item.id === selectedProductId,
+    );
+    const confirmed = await confirmAction({
+      title: "Tambah produk ke booking?",
+      text: `${selectedProductQty} x ${selectedProduct?.name ?? "produk"} akan ditambahkan ke booking ${productModal.bookingCode}.`,
+      confirmButtonText: "Ya, tambah",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSavingProduct(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch(
+      const response = await authFetch(
         `/api/bookings/admin/${productModal.bookingId}/products`,
         {
           method: "POST",
@@ -541,12 +553,27 @@ export default function ReservasiPage() {
     bookingId: string,
     bookingProductId: string,
   ) {
+    const product = selectedProductBooking?.products.find(
+      (item) => item.id === bookingProductId,
+    );
+    const confirmed = await confirmAction({
+      title: "Hapus produk dari booking?",
+      text: `${product?.itemName ?? "Produk ini"} akan dihapus dari booking.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setRemovingProductId(bookingProductId);
       setError(null);
       setMessage(null);
 
-      const response = await fetch(
+      const response = await authFetch(
         `/api/bookings/admin/${bookingId}/products`,
         {
           method: "DELETE",
@@ -586,7 +613,7 @@ export default function ReservasiPage() {
       setLoadingReceipt(true);
       setError(null);
 
-      const response = await fetch(`/api/payments/receipt/${bookingId}`);
+      const response = await authFetch(`/api/payments/receipt/${bookingId}`);
       const json = (await response.json()) as {
         message?: string;
         receipt?: ReceiptDetail;
@@ -675,7 +702,7 @@ export default function ReservasiPage() {
       }
 
       try {
-        const response = await fetch(`/api/payments/booking/${bookingId}`);
+        const response = await authFetch(`/api/payments/booking/${bookingId}`);
         const json = (await response.json()) as {
           message?: string;
           booking?: { status?: BookingItem["status"] };
@@ -724,7 +751,7 @@ export default function ReservasiPage() {
         }
       }
     },
-    [syncBookingStatusLocally, bookingMap],
+    [syncBookingStatusLocally],
   );
 
   useEffect(() => {
@@ -773,6 +800,22 @@ export default function ReservasiPage() {
     bookingId: string,
     status: "IN_PROGRESS" | "COMPLETED",
   ) {
+    const booking = data?.bookings.find((item) => item.id === bookingId);
+    const confirmed = await confirmAction({
+      title:
+        status === "IN_PROGRESS"
+          ? "Mulai layanan booking?"
+          : "Tandai booking selesai?",
+      text: `Status booking ${booking?.code ?? "ini"} akan diubah menjadi ${status}.`,
+      confirmButtonText:
+        status === "IN_PROGRESS" ? "Ya, mulai" : "Ya, selesaikan",
+      icon: "warning",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
@@ -784,7 +827,7 @@ export default function ReservasiPage() {
         body.branchId = branchId;
       }
 
-      const response = await fetch(`/api/bookings/admin/${bookingId}/status`, {
+      const response = await authFetch(`/api/bookings/admin/${bookingId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
@@ -805,16 +848,34 @@ export default function ReservasiPage() {
   async function payCash(booking: BookingItem) {
     const bookingId = booking.id;
     const amountDue = booking.remainingDue;
-    const amountInput = window.prompt(
-      `Masukkan nominal cash diterima untuk sisa tagihan (minimal ${amountDue})`,
-      `${amountDue}`,
-    );
+    const amountInput = await Swal.fire({
+      title: "Konfirmasi pembayaran cash",
+      text: `Masukkan nominal cash diterima untuk booking ${booking.code}. Minimal ${toRupiah(amountDue)}.`,
+      input: "text",
+      inputValue: String(amountDue),
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Ya, proses",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#111827",
+      cancelButtonColor: "#6b7280",
+      inputValidator: (value) => {
+        const amount = Number(value.replace(/[^\d]/g, ""));
+        if (!Number.isFinite(amount) || amount <= 0) {
+          return "Nominal cash tidak valid";
+        }
+        if (amount < amountDue) {
+          return `Nominal minimal ${toRupiah(amountDue)}`;
+        }
+        return null;
+      },
+    });
 
-    if (!amountInput) {
+    if (!amountInput.isConfirmed || !amountInput.value) {
       return;
     }
 
-    const amountPaid = Number(amountInput.replace(/[^\d]/g, ""));
+    const amountPaid = Number(amountInput.value.replace(/[^\d]/g, ""));
     if (!Number.isFinite(amountPaid) || amountPaid <= 0) {
       setError("Nominal cash tidak valid");
       return;
@@ -824,7 +885,7 @@ export default function ReservasiPage() {
       setError(null);
       setMessage(null);
 
-      const response = await fetch("/api/payments/complete", {
+      const response = await authFetch("/api/payments/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -860,11 +921,21 @@ export default function ReservasiPage() {
   }
 
   async function payQris(booking: BookingItem) {
+    const confirmed = await confirmAction({
+      title: "Proses pembayaran QRIS?",
+      text: `QRIS untuk booking ${booking.code} akan dibuat.`,
+      confirmButtonText: "Ya, buat QRIS",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
 
-      const response = await fetch("/api/payments/complete", {
+      const response = await authFetch("/api/payments/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -915,12 +986,23 @@ export default function ReservasiPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Buat ulang QRIS?",
+      text: `QRIS booking ${qrisModal.bookingCode} akan dibuat ulang.`,
+      confirmButtonText: "Ya, buat ulang",
+      icon: "warning",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setRetryingQris(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch("/api/payments/qris/retry", {
+      const response = await authFetch("/api/payments/qris/retry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentId: qrisModal.paymentId }),
@@ -1004,12 +1086,22 @@ export default function ReservasiPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Tambah walk-in?",
+      text: `Booking walk-in untuk ${walkInName} pada ${date} ${walkInTime} akan dibuat.`,
+      confirmButtonText: "Ya, tambah",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSubmittingWalkIn(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch("/api/bookings/admin/walk-in", {
+      const response = await authFetch("/api/bookings/admin/walk-in", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1627,7 +1719,11 @@ export default function ReservasiPage() {
                 <div className="border border-gray-200 rounded-xl p-6 bg-gray-50 flex items-center justify-center">
                   <button
                     type="button"
-                    onClick={() => window.location.replace(qrisModal.qrString)}
+                    onClick={() => {
+                      if (qrisModal.qrString) {
+                        window.location.replace(qrisModal.qrString);
+                      }
+                    }}
                     className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow w-full text-center block transition-colors"
                   >
                     Buka Link Pembayaran Xendit

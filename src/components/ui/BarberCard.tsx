@@ -1,6 +1,3 @@
-"use client";
-
-import { useState } from "react";
 import Image from "next/image";
 import Button from "./Button";
 import { Barber } from "@/types";
@@ -10,14 +7,8 @@ interface BarberCardProps {
 }
 
 export default function BarberCard({ barber }: BarberCardProps) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <div
-      className="flex flex-col items-center"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <div className="flex flex-col items-center">
       <div className="relative overflow-hidden aspect-square w-full shadow-sm">
         <Image
           src={barber.image}

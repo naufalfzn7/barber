@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import MemberBookingPanel from "@/components/features/booking/MemberBookingPanel";
 import MemberReservationDashboard from "@/components/features/booking/MemberReservationDashboard";
 
@@ -25,7 +26,15 @@ export default function ReservasiPage() {
               cabang, layanan, dan slot tanpa perlu berpindah ke halaman cabang.
             </p>
           </header>
-          <MemberBookingPanel />
+          <Suspense
+            fallback={
+              <div className="bg-white border border-black/10 p-8 text-sm text-black/60">
+                Memuat form reservasi...
+              </div>
+            }
+          >
+            <MemberBookingPanel />
+          </Suspense>
         </div>
       </section>
 

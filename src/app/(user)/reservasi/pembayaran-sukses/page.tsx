@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import XenditSuccessPage from "@/components/features/booking/XenditSuccessPage";
 
 export const metadata: Metadata = {
@@ -7,5 +8,15 @@ export const metadata: Metadata = {
 };
 
 export default function PembayaranSuksesPage() {
-  return <XenditSuccessPage />;
+  return (
+    <Suspense
+      fallback={
+        <main className="min-h-[calc(100vh-88px)] bg-[#EBEBEB] px-6 py-16 flex items-center justify-center">
+          <p className="text-sm text-black/60">Memuat konfirmasi pembayaran...</p>
+        </main>
+      }
+    >
+      <XenditSuccessPage />
+    </Suspense>
+  );
 }

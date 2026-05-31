@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useToastFeedback } from "@/components/ui/useToastFeedback";
 import { formatIndonesianDate } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type OverviewBranch = {
   branchId: string;
@@ -99,7 +100,7 @@ export default function SuperAdminDashboard() {
     async function load() {
       try {
         setLoading(true);
-        const response = await fetch("/api/superadmin/overview");
+        const response = await authFetch("/api/superadmin/overview");
         const json = (await response.json()) as OverviewResponse & {
           message?: string;
         };

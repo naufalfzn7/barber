@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 import { formatIndonesianDate } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type BranchSummary = {
   branchId: string;
@@ -80,12 +84,12 @@ export default function CabangPage() {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  useToastFeedback({ error, success });
+  useToastFeedback({ message: success, error });
 
   const loadBranches = async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/superadmin/branches");
+      const response = await authFetch("/api/superadmin/branches");
       const json = (await response.json()) as BranchResponse & {
         message?: string;
       };
@@ -155,10 +159,23 @@ export default function CabangPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: formMode === "create" ? "Tambah cabang?" : "Simpan perubahan?",
+      text:
+        formMode === "create"
+          ? `Cabang ${formData.name.trim()} akan dibuat.`
+          : `Perubahan cabang ${formData.name.trim()} akan disimpan.`,
+      confirmButtonText: formMode === "create" ? "Ya, tambah" : "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setSubmitting(true);
     try {
       if (formMode === "create") {
-        const response = await fetch("/api/superadmin/branches", {
+        const response = await authFetch("/api/superadmin/branches", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -177,7 +194,7 @@ export default function CabangPage() {
         handleCloseForm();
         await loadBranches();
       } else if (formMode === "edit" && editingBranch) {
-        const response = await fetch(
+        const response = await authFetch(
           `/api/superadmin/branches/${editingBranch.id}`,
           {
             method: "PATCH",
@@ -208,13 +225,21 @@ export default function CabangPage() {
   };
 
   const handleDeleteBranch = async (branchId: string, branchName: string) => {
-    if (!confirm(`Yakin hapus cabang "${branchName}"?`)) {
+    const confirmed = await confirmAction({
+      title: "Hapus cabang?",
+      text: `Cabang "${branchName}" akan dihapus dan tidak bisa dikembalikan.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
       return;
     }
 
     setSubmitting(true);
     try {
-      const response = await fetch(`/api/superadmin/branches/${branchId}`, {
+      const response = await authFetch(`/api/superadmin/branches/${branchId}`, {
         method: "DELETE",
       });
 

@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { notifyClientDataChanged } from "@/lib/authClient";
 
 const MEMBER_DEFAULT_REDIRECT = "/reservasi";
 
@@ -34,11 +35,13 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true);
     setError(null);
+    setStatusText("Memeriksa akun...");
 
     try {
       const response = await fetch("/api/auth/login", {
@@ -53,23 +56,31 @@ export default function LoginForm() {
       };
 
       if (!response.ok) {
-        setError(data.message ?? "Login failed");
+        setError(data.message ?? "Login gagal");
+        setStatusText(null);
         return;
       }
 
+      setStatusText("Menyiapkan sesi...");
+      notifyClientDataChanged("auth:changed");
+
       if (data.user?.role === "SUPER_ADMIN") {
         router.replace("/superadmin/dashboard");
+        router.refresh();
         return;
       }
 
       if (data.user?.role === "ADMIN") {
         router.replace("/admin/dashboard");
+        router.refresh();
         return;
       }
 
       router.replace(resolveMemberRedirect(nextPath));
+      router.refresh();
     } catch {
-      setError("Unable to login right now");
+      setError("Login belum bisa diproses sekarang");
+      setStatusText(null);
     } finally {
       setLoading(false);
     }
@@ -112,13 +123,16 @@ export default function LoginForm() {
         </label>
 
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {statusText ? (
+          <p className="text-sm text-black/60">{statusText}</p>
+        ) : null}
 
         <button
           type="submit"
           disabled={loading}
           className="w-full bg-black text-white py-2.5 text-xs tracking-[0.2em] uppercase font-bold disabled:opacity-50"
         >
-          {loading ? "Logging in..." : "Login"}
+          {loading ? "Masuk..." : "Login"}
         </button>
       </form>
 

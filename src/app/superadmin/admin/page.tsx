@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 import { formatIndonesianDateTime } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type BranchOption = {
   branchId: string;
@@ -66,8 +70,8 @@ export default function AdminPage() {
     try {
       setLoading(true);
       const [adminsRes, branchesRes] = await Promise.all([
-        fetch("/api/superadmin/admins"),
-        fetch("/api/superadmin/branches"),
+        authFetch("/api/superadmin/admins"),
+        authFetch("/api/superadmin/branches"),
       ]);
 
       const adminsJson = (await adminsRes.json()) as AdminResponse & {
@@ -158,12 +162,24 @@ export default function AdminPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: editingId ? "Simpan perubahan admin?" : "Tambah admin?",
+      text: editingId
+        ? `Data admin ${form.fullName} akan diperbarui.`
+        : `Admin ${form.fullName} akan dibuat.`,
+      confirmButtonText: editingId ? "Ya, simpan" : "Ya, tambah",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch(
+      const response = await authFetch(
         editingId
           ? `/api/superadmin/admins/${editingId}`
           : "/api/superadmin/admins",
@@ -205,10 +221,22 @@ export default function AdminPage() {
   }
 
   async function toggleActive(admin: AdminItem) {
+    const confirmed = await confirmAction({
+      title: admin.isActive ? "Nonaktifkan admin?" : "Aktifkan admin?",
+      text: `Status admin ${admin.fullName} akan diubah.`,
+      confirmButtonText: admin.isActive ? "Ya, nonaktifkan" : "Ya, aktifkan",
+      icon: "warning",
+      danger: admin.isActive,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
-      const response = await fetch(`/api/superadmin/admins/${admin.id}`, {
+      const response = await authFetch(`/api/superadmin/admins/${admin.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !admin.isActive }),
@@ -227,11 +255,24 @@ export default function AdminPage() {
   }
 
   async function deleteAdmin(adminId: string) {
+    const admin = admins.find((item) => item.id === adminId);
+    const confirmed = await confirmAction({
+      title: "Hapus admin?",
+      text: `Admin ${admin?.fullName ?? "ini"} akan dihapus dan tidak bisa dikembalikan.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setDeleting(true);
       setError(null);
       setMessage(null);
-      const response = await fetch(`/api/superadmin/admins/${adminId}`, {
+      const response = await authFetch(`/api/superadmin/admins/${adminId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       });
@@ -378,7 +419,7 @@ export default function AdminPage() {
                 {admin.isActive ? "Nonaktifkan" : "Aktifkan"}
               </button>
               <button
-                onClick={() => setDeletingId(admin.id)}
+                onClick={() => deleteAdmin(admin.id)}
                 className="flex-1 text-xs px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
               >
                 Hapus

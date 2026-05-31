@@ -1,8 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 import { formatIndonesianDateTime } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 type StockStatus = "aman" | "menipis" | "habis";
@@ -123,6 +127,16 @@ function AddItemModal({
 
   async function handleSubmit() {
     if (!sku.trim() || !name.trim()) {
+      return;
+    }
+
+    const confirmed = await confirmAction({
+      title: "Tambah item stok?",
+      text: `${name.trim()} akan ditambahkan ke stok cabang ini.`,
+      confirmButtonText: "Ya, tambah",
+    });
+
+    if (!confirmed) {
       return;
     }
 
@@ -268,7 +282,7 @@ function AdjustModal({
   item: InventoryItem;
   mode: "tambah" | "kurangi";
   onClose: () => void;
-  onConfirm: (amount: number) => void;
+  onConfirm: (amount: number) => Promise<void>;
 }) {
   const [amount, setAmount] = useState(1);
 
@@ -362,8 +376,7 @@ function AdjustModal({
             </button>
             <button
               onClick={() => {
-                onConfirm(amount);
-                onClose();
+                void onConfirm(amount).then(onClose);
               }}
               className={`flex-1 py-2.5 text-sm text-white rounded-lg font-semibold transition-colors ${
                 mode === "tambah"
@@ -547,7 +560,7 @@ export default function StokPage() {
         setLoading(true);
         setError(null);
 
-        const meResponse = await fetch("/api/auth/me");
+        const meResponse = await authFetch("/api/auth/me");
         const me = (await meResponse.json()) as {
           user?: { role?: Role; branchId?: string | null };
           message?: string;
@@ -559,7 +572,7 @@ export default function StokPage() {
 
         setRole(me.user.role);
 
-        const catalogResponse = await fetch("/api/bookings/catalog");
+        const catalogResponse = await authFetch("/api/bookings/catalog");
         const catalog = (await catalogResponse.json()) as {
           branches?: Array<{ id: string; name: string }>;
           message?: string;
@@ -602,7 +615,7 @@ export default function StokPage() {
       setError(null);
 
       const query = new URLSearchParams({ branchId: currentBranchId });
-      const response = await fetch(`/api/inventory/items?${query.toString()}`);
+      const response = await authFetch(`/api/inventory/items?${query.toString()}`);
       const data = (await response.json()) as {
         items?: InventoryItem[];
         message?: string;
@@ -645,7 +658,7 @@ export default function StokPage() {
         limit: "25",
       });
 
-      const response = await fetch(
+      const response = await authFetch(
         `/api/inventory/movements?${query.toString()}`,
       );
       const data = (await response.json()) as {
@@ -683,22 +696,34 @@ export default function StokPage() {
     stockQty: number;
     minStockQty: number;
   }) {
-    const response = await fetch("/api/inventory/items", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        branchId,
-        ...payload,
-      }),
-    });
+    try {
+      setError(null);
+      setMessage(null);
 
-    const data = (await response.json()) as { message?: string };
-    if (!response.ok) {
-      throw new Error(data.message ?? "Gagal menambah item stok");
+      const response = await authFetch("/api/inventory/items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId,
+          ...payload,
+        }),
+      });
+
+      const data = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(data.message ?? "Gagal menambah item stok");
+      }
+
+      setMessage(data.message ?? "Item stok berhasil ditambahkan");
+      await loadItems(branchId);
+    } catch (createError) {
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Gagal menambah item stok",
+      );
+      throw createError;
     }
-
-    setMessage(data.message ?? "Item stok berhasil ditambahkan");
-    await loadItems(branchId);
   }
 
   async function handleAdjust(
@@ -709,7 +734,19 @@ export default function StokPage() {
     setError(null);
     setMessage(null);
 
-    const response = await fetch("/api/inventory/movements", {
+    const confirmed = await confirmAction({
+      title: mode === "tambah" ? "Tambah stok?" : "Kurangi stok?",
+      text: `Stok akan ${mode === "tambah" ? "ditambah" : "dikurangi"} ${amount} pcs.`,
+      confirmButtonText: mode === "tambah" ? "Ya, tambah" : "Ya, kurangi",
+      icon: "warning",
+      danger: mode === "kurangi",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    const response = await authFetch("/api/inventory/movements", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -753,12 +790,22 @@ export default function StokPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Update minimum stok?",
+      text: `Minimum stok ${item.name} akan diubah menjadi ${minStockQty} pcs.`,
+      confirmButtonText: "Ya, update",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
       setMinStockSavingId(item.id);
 
-      const response = await fetch(`/api/inventory/items/${item.id}`, {
+      const response = await authFetch(`/api/inventory/items/${item.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1056,9 +1103,9 @@ export default function StokPage() {
           item={adjustTarget.item}
           mode={adjustTarget.mode}
           onClose={() => setAdjustTarget(null)}
-          onConfirm={(amount) => {
-            void handleAdjust(adjustTarget.item.id, adjustTarget.mode, amount);
-          }}
+          onConfirm={(amount) =>
+            handleAdjust(adjustTarget.item.id, adjustTarget.mode, amount)
+          }
         />
       )}
 

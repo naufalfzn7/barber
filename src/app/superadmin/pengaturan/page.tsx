@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 import { formatIndonesianDate } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type Branch = {
   id: string;
@@ -42,6 +46,11 @@ type Holiday = {
 type ApiListResponse<T> = { data: T };
 
 type TabId = "hours" | "barber" | "holiday" | "system";
+
+type DepositSettingResponse = {
+  depositPercentage: number;
+  message?: string;
+};
 
 const DAYS = [
   "MONDAY",
@@ -99,6 +108,10 @@ function formatDisplayDate(value: string) {
   return formatIndonesianDate(date);
 }
 
+function toRupiah(value: number) {
+  return `Rp ${value.toLocaleString("id-ID")}`;
+}
+
 export default function PengaturanPage() {
   const [selectedTab, setSelectedTab] = useState<TabId>("hours");
   const [branches, setBranches] = useState<Branch[]>([]);
@@ -112,6 +125,9 @@ export default function PengaturanPage() {
   const [savingHours, setSavingHours] = useState(false);
   const [savingBarberSchedule, setSavingBarberSchedule] = useState(false);
   const [savingHoliday, setSavingHoliday] = useState(false);
+  const [depositPercentage, setDepositPercentage] = useState(25);
+  const [depositInput, setDepositInput] = useState("25");
+  const [savingDeposit, setSavingDeposit] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -123,12 +139,13 @@ export default function PengaturanPage() {
   );
 
   const branchBarberOptions = selectedBranch?.barbermen ?? [];
+  const depositPreviewBase = 50000;
+  const depositPreviewAmount = Math.round(
+    (depositPreviewBase * depositPercentage) / 100,
+  );
 
   const loadBranches = useCallback(async () => {
-    const response = await fetch("/api/bookings/catalog", {
-      cache: "no-store",
-      credentials: "include",
-    });
+    const response = await authFetch("/api/bookings/catalog");
     const result = await readJson<{ branches: Branch[] }>(response);
     const nextBranches = result.branches ?? [];
     setBranches(nextBranches);
@@ -137,9 +154,8 @@ export default function PengaturanPage() {
   }, []);
 
   const loadOperatingHours = useCallback(async (branchId: string) => {
-    const response = await fetch(
+    const response = await authFetch(
       `/api/scheduling/operating-hours?branchId=${encodeURIComponent(branchId)}`,
-      { cache: "no-store", credentials: "include" },
     );
     const result = await readJson<ApiListResponse<OperatingHour[]>>(response);
     const byDay = new Map(
@@ -161,23 +177,32 @@ export default function PengaturanPage() {
 
   const loadBarberSchedules = useCallback(async (branchId: string) => {
     const today = new Date().toISOString().slice(0, 10);
-    const response = await fetch(
+    const response = await authFetch(
       `/api/scheduling/barber-schedules?branchId=${encodeURIComponent(
         branchId,
       )}&date=${today}`,
-      { cache: "no-store", credentials: "include" },
     );
     const result = await readJson<ApiListResponse<BarberSchedule[]>>(response);
     setBarberSchedules(result.data ?? []);
   }, []);
 
   const loadHolidays = useCallback(async (branchId: string) => {
-    const response = await fetch(
+    const response = await authFetch(
       `/api/scheduling/holidays?branchId=${encodeURIComponent(branchId)}`,
-      { cache: "no-store", credentials: "include" },
     );
     const result = await readJson<ApiListResponse<Holiday[]>>(response);
     setHolidays(result.data ?? []);
+  }, []);
+
+  const loadDepositSetting = useCallback(async () => {
+    const response = await authFetch("/api/superadmin/settings/deposit");
+    const result = await readJson<DepositSettingResponse>(response);
+    const nextPercentage = Number(result.depositPercentage);
+    const normalized = Number.isFinite(nextPercentage)
+      ? Math.trunc(nextPercentage)
+      : 25;
+    setDepositPercentage(normalized);
+    setDepositInput(String(normalized));
   }, []);
 
   const loadAll = useCallback(
@@ -189,6 +214,7 @@ export default function PengaturanPage() {
           loadOperatingHours(branchId),
           loadBarberSchedules(branchId),
           loadHolidays(branchId),
+          loadDepositSetting(),
         ]);
       } catch (cause) {
         setError(
@@ -200,7 +226,12 @@ export default function PengaturanPage() {
         setLoading(false);
       }
     },
-    [loadBarberSchedules, loadHolidays, loadOperatingHours],
+    [
+      loadBarberSchedules,
+      loadDepositSetting,
+      loadHolidays,
+      loadOperatingHours,
+    ],
   );
 
   useEffect(() => {
@@ -226,15 +257,24 @@ export default function PengaturanPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Simpan jam operasional?",
+      text: "Perubahan jam operasional cabang akan disimpan.",
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setSavingHours(true);
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetch("/api/scheduling/operating-hours", {
+      const response = await authFetch("/api/scheduling/operating-hours", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ branchId: selectedBranchId, hours }),
       });
       await readJson<{ data: OperatingHour[] }>(response);
@@ -256,15 +296,24 @@ export default function PengaturanPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Simpan jadwal barber?",
+      text: "Jadwal khusus barber akan disimpan.",
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setSavingBarberSchedule(true);
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetch("/api/scheduling/barber-schedules", {
+      const response = await authFetch("/api/scheduling/barber-schedules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           branchId: selectedBranchId,
           ...barberForm,
@@ -290,15 +339,24 @@ export default function PengaturanPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Simpan hari libur?",
+      text: "Hari libur cabang atau barber akan ditambahkan.",
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setSavingHoliday(true);
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetch("/api/scheduling/holidays", {
+      const response = await authFetch("/api/scheduling/holidays", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           branchId: selectedBranchId,
           ...holidayForm,
@@ -324,18 +382,27 @@ export default function PengaturanPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Hapus hari libur?",
+      text: "Data hari libur akan dihapus dan tidak bisa dikembalikan.",
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `/api/scheduling/holidays/${holidayId}?branchId=${encodeURIComponent(
           selectedBranchId,
         )}`,
-        {
-          method: "DELETE",
-          credentials: "include",
-        },
+        { method: "DELETE" },
       );
       await readJson<{ data: { deleted: boolean } }>(response);
       setMessage("Libur dihapus.");
@@ -344,6 +411,50 @@ export default function PengaturanPage() {
       setError(
         cause instanceof Error ? cause.message : "Gagal menghapus libur",
       );
+    }
+  }
+
+  async function handleSaveDepositSetting() {
+    const parsed = Number(depositInput);
+    if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+      setError("Persentase deposit harus angka 0-100");
+      return;
+    }
+
+    const normalized = Math.trunc(parsed);
+    const confirmed = await confirmAction({
+      title: "Simpan persentase deposit?",
+      text: `Deposit booking akan diatur menjadi ${normalized}%.`,
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingDeposit(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await authFetch("/api/superadmin/settings/deposit", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ depositPercentage: normalized }),
+      });
+      const result = await readJson<DepositSettingResponse>(response);
+      const nextPercentage = Math.trunc(Number(result.depositPercentage));
+      setDepositPercentage(nextPercentage);
+      setDepositInput(String(nextPercentage));
+      setMessage("Persentase deposit tersimpan.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Gagal menyimpan persentase deposit",
+      );
+    } finally {
+      setSavingDeposit(false);
     }
   }
 
@@ -857,6 +968,78 @@ export default function PengaturanPage() {
 
       {selectedTab === "system" ? (
         <div className="space-y-4">
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-1 border-b border-gray-100 pb-4">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Deposit Reservasi Member
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Persentase ini dipakai untuk nominal invoice Xendit saat member
+                membuat reservasi.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="space-y-3">
+                <label className="block text-xs text-gray-500">
+                  <span className="mb-1 block font-semibold text-gray-700">
+                    Persentase Deposit
+                  </span>
+                  <div className="flex max-w-xs items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:ring-2 focus-within:ring-black">
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={depositInput}
+                      onChange={(event) => setDepositInput(event.target.value)}
+                      className="w-full px-3 py-2 text-sm text-gray-900 focus:outline-none"
+                    />
+                    <span className="border-l border-gray-200 px-3 text-sm font-semibold text-gray-500">
+                      %
+                    </span>
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSaveDepositSetting}
+                  disabled={savingDeposit}
+                  className="rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingDeposit ? "Menyimpan..." : "Simpan Persentase"}
+                </button>
+              </div>
+
+              <div className="rounded-lg bg-gray-50 p-4 text-xs text-gray-600">
+                <p className="font-semibold text-gray-900">Preview</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span>Harga layanan</span>
+                    <span className="font-semibold text-gray-900">
+                      {toRupiah(depositPreviewBase)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Deposit {depositPercentage}%</span>
+                    <span className="font-semibold text-gray-900">
+                      {toRupiah(depositPreviewAmount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
+                    <span>Sisa bayar di kasir</span>
+                    <span className="font-semibold text-gray-900">
+                      {toRupiah(depositPreviewBase - depositPreviewAmount)}
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+                  Contoh: 15% dari Rp 50.000 adalah Rp 7.500. Untuk deposit Rp
+                  12.500, gunakan 25%.
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-semibold text-gray-900 mb-4">
               Informasi System

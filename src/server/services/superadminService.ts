@@ -28,8 +28,6 @@ type BranchSummary = {
   openedSince: string;
 };
 
-type ReportRange = "today" | "week" | "month" | "custom";
-
 function formatDateKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }

@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
+import { authFetch } from "@/lib/authClient";
 
 type BranchOption = {
   branchId: string;
@@ -70,8 +74,8 @@ export default function LayananPage() {
     try {
       setLoading(true);
       const [servicesRes, branchesRes] = await Promise.all([
-        fetch("/api/superadmin/services"),
-        fetch("/api/superadmin/branches"),
+        authFetch("/api/superadmin/services"),
+        authFetch("/api/superadmin/branches"),
       ]);
 
       const servicesJson = (await servicesRes.json()) as ServiceItem[] & {
@@ -163,12 +167,24 @@ export default function LayananPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: editingId ? "Simpan perubahan layanan?" : "Tambah layanan?",
+      text: editingId
+        ? `Data layanan ${form.name} akan diperbarui.`
+        : `Layanan ${form.name} akan dibuat.`,
+      confirmButtonText: editingId ? "Ya, simpan" : "Ya, tambah",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch(
+      const response = await authFetch(
         editingId
           ? `/api/superadmin/services/${editingId}`
           : "/api/superadmin/services",
@@ -203,10 +219,22 @@ export default function LayananPage() {
   }
 
   async function toggleActive(service: ServiceItem) {
+    const confirmed = await confirmAction({
+      title: service.isActive ? "Nonaktifkan layanan?" : "Aktifkan layanan?",
+      text: `Status layanan ${service.name} akan diubah.`,
+      confirmButtonText: service.isActive ? "Ya, nonaktifkan" : "Ya, aktifkan",
+      icon: "warning",
+      danger: service.isActive,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
-      const response = await fetch(`/api/superadmin/services/${service.id}`, {
+      const response = await authFetch(`/api/superadmin/services/${service.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isActive: !service.isActive }),

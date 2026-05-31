@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
+import { authFetch } from "@/lib/authClient";
 
 type BranchOption = {
   branchId: string;
@@ -61,8 +65,8 @@ export default function BarbermanPage() {
     try {
       setLoading(true);
       const [barberRes, branchesRes] = await Promise.all([
-        fetch("/api/superadmin/barbermen"),
-        fetch("/api/superadmin/branches"),
+        authFetch("/api/superadmin/barbermen"),
+        authFetch("/api/superadmin/branches"),
       ]);
 
       const barberJson = (await barberRes.json()) as BarbermanItem[] & {
@@ -149,12 +153,24 @@ export default function BarbermanPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: editingId ? "Simpan perubahan barberman?" : "Tambah barberman?",
+      text: editingId
+        ? `Data barberman ${form.name} akan diperbarui.`
+        : `Barberman ${form.name} akan dibuat.`,
+      confirmButtonText: editingId ? "Ya, simpan" : "Ya, tambah",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch(
+      const response = await authFetch(
         editingId
           ? `/api/superadmin/barbermen/${editingId}`
           : "/api/superadmin/barbermen",
@@ -190,10 +206,26 @@ export default function BarbermanPage() {
   }
 
   async function toggleActive(barberman: BarbermanItem) {
+    const confirmed = await confirmAction({
+      title: barberman.isActive
+        ? "Nonaktifkan barberman?"
+        : "Aktifkan barberman?",
+      text: `Status barberman ${barberman.name} akan diubah.`,
+      confirmButtonText: barberman.isActive
+        ? "Ya, nonaktifkan"
+        : "Ya, aktifkan",
+      icon: "warning",
+      danger: barberman.isActive,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
-      const response = await fetch(
+      const response = await authFetch(
         `/api/superadmin/barbermen/${barberman.id}`,
         {
           method: "PATCH",
@@ -215,11 +247,24 @@ export default function BarbermanPage() {
   }
 
   async function deleteBarberman(barbermanId: string) {
+    const barberman = barbermen.find((item) => item.id === barbermanId);
+    const confirmed = await confirmAction({
+      title: "Hapus barberman?",
+      text: `Barberman ${barberman?.name ?? "ini"} akan dihapus dan tidak bisa dikembalikan.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setDeleting(true);
       setError(null);
       setMessage(null);
-      const response = await fetch(`/api/superadmin/barbermen/${barbermanId}`, {
+      const response = await authFetch(`/api/superadmin/barbermen/${barbermanId}`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
       });
@@ -379,7 +424,7 @@ export default function BarbermanPage() {
                 {barberman.isActive ? "Nonaktifkan" : "Aktifkan"}
               </button>
               <button
-                onClick={() => setDeletingId(barberman.id)}
+                onClick={() => deleteBarberman(barberman.id)}
                 className="flex-1 text-xs px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors"
               >
                 Hapus

@@ -120,6 +120,29 @@ export const bookingRepository = {
     });
   },
 
+  findActiveBookingsInWindow(input: {
+    branchId: string;
+    dateStart: Date;
+    dateEnd: Date;
+    barbermanId?: string;
+  }) {
+    return prisma.booking.findMany({
+      where: {
+        branchId: input.branchId,
+        status: { in: ACTIVE_BOOKING_STATUSES },
+        scheduledStart: { lt: input.dateEnd },
+        scheduledEnd: { gt: input.dateStart },
+        ...(input.barbermanId ? { barbermanId: input.barbermanId } : {}),
+      },
+      select: {
+        id: true,
+        barbermanId: true,
+        scheduledStart: true,
+        scheduledEnd: true,
+      },
+    });
+  },
+
   createBookingWithHistory(input: {
     code: string;
     branchId: string;
@@ -189,6 +212,19 @@ export const bookingRepository = {
         },
         barberman: { select: { id: true, name: true } },
         branch: { select: { id: true, code: true, name: true } },
+        payment: {
+          select: {
+            id: true,
+            status: true,
+            amountDue: true,
+            isDeposit: true,
+            depositAmount: true,
+            externalRef: true,
+            qrisString: true,
+            qrisImageUrl: true,
+            qrisExpiresAt: true,
+          },
+        },
       },
       orderBy: { scheduledStart: "desc" },
     });
@@ -587,7 +623,7 @@ export const bookingRepository = {
         const stale = await tx.booking.findMany({
           where: {
             status: BookingStatus.PAYMENT_PENDING,
-            createdAt: { lt: input.before },
+            scheduledStart: { lte: input.before },
             OR: [
               { payment: null },
               {
@@ -603,7 +639,7 @@ export const bookingRepository = {
               },
             ],
           },
-          select: { id: true },
+          select: { id: true, status: true },
         });
 
         if (stale.length === 0) {
@@ -611,15 +647,50 @@ export const bookingRepository = {
         }
 
         const staleIds = stale.map((item) => item.id);
+        const canceledAt = new Date();
 
-        await tx.booking.deleteMany({
+        const canceled = await tx.booking.updateMany({
           where: {
             id: { in: staleIds },
             status: BookingStatus.PAYMENT_PENDING,
           },
+          data: {
+            status: BookingStatus.CANCELED,
+            canceledAt,
+          },
         });
 
-        return staleIds.length;
+        if (canceled.count === 0) {
+          return 0;
+        }
+
+        await tx.payment.updateMany({
+          where: {
+            bookingId: { in: staleIds },
+            status: {
+              in: [
+                PaymentStatus.PENDING,
+                PaymentStatus.FAILED,
+                PaymentStatus.EXPIRED,
+              ],
+            },
+          },
+          data: {
+            status: PaymentStatus.EXPIRED,
+          },
+        });
+
+        await tx.bookingStatusHistory.createMany({
+          data: stale.map((booking) => ({
+            bookingId: booking.id,
+            oldStatus: booking.status,
+            newStatus: BookingStatus.CANCELED,
+            changedById: null,
+            reason: input.reason,
+          })),
+        });
+
+        return canceled.count;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -634,7 +705,7 @@ export const bookingRepository = {
       const candidates = await tx.booking.findMany({
         where: {
           status: BookingStatus.PAYMENT_PENDING,
-          createdAt: {
+          scheduledStart: {
             gte: input.windowStart,
             lt: input.windowEnd,
           },
@@ -677,7 +748,12 @@ export const bookingRepository = {
             type: "PAYMENT_UPDATE",
             title: "Deposit payment hampir kedaluwarsa",
             message,
-            createdAt: { gte: input.windowStart },
+            createdAt: {
+              gte: new Date(
+                input.windowStart.getTime() -
+                  input.minutesLeft * 60 * 1000,
+              ),
+            },
           },
           select: { id: true },
         });

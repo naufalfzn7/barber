@@ -11,9 +11,25 @@ import { env } from "@/server/core/env";
 const XENDIT_CALLBACK_URL_REGEX =
   /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,63}\b([-a-zA-Z0-9()@:%_+.~#?&\/=]*)$/;
 
+const DEFAULT_DEPOSIT_PERCENTAGE = 25;
+const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
+const MIN_XENDIT_INVOICE_DURATION_SECONDS = 60;
+const EXPIRED_DEPOSIT_CANCEL_REASON =
+  "Auto canceled because deposit was not paid 1 hour before reservation";
+
+function parseDepositPercentage(value: string | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_DEPOSIT_PERCENTAGE;
+  }
+
+  return Math.min(100, Math.max(0, Math.trunc(parsed)));
+}
+
 async function createXenditInvoice(input: {
   externalRef: string;
   amount: number;
+  expiresAt: Date;
 }) {
   const callbackUrl =
     env.xenditCallbackUrl?.trim() ||
@@ -30,6 +46,15 @@ async function createXenditInvoice(input: {
   }
 
   const basic = Buffer.from(`${env.xenditSecretKey}:`).toString("base64");
+  const invoiceDuration = Math.floor(
+    (input.expiresAt.getTime() - Date.now()) / 1000,
+  );
+
+  if (invoiceDuration < MIN_XENDIT_INVOICE_DURATION_SECONDS) {
+    throw new Error(
+      "Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat 1 jam sebelum jadwal reservasi.",
+    );
+  }
 
   const response = await fetch("https://api.xendit.co/v2/invoices", {
     method: "POST",
@@ -41,6 +66,7 @@ async function createXenditInvoice(input: {
       external_id: input.externalRef,
       amount: Math.round(input.amount),
       description: `Payment for deposit ${input.externalRef}`,
+      invoice_duration: invoiceDuration,
       success_redirect_url: `${env.appUrl}/reservasi/pembayaran-sukses?xendit_ref=${encodeURIComponent(input.externalRef)}&xendit_status=paid`,
       callback_url: callbackUrl,
     }),
@@ -67,8 +93,37 @@ async function createXenditInvoice(input: {
     qrString: body.invoice_url ?? null, // Use qrString to pass checkout URL to DB/Frontend
     qrImageUrl: body.invoice_url ?? null,
     status: body.status ?? "PENDING",
-    expiresAt: body.expiry_date ?? null,
+    expiresAt: input.expiresAt.toISOString(),
   };
+}
+
+function getDepositPaymentDeadline(scheduledStart: Date) {
+  return new Date(
+    scheduledStart.getTime() -
+      DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
+  );
+}
+
+function hasUsableDepositInvoice(input: {
+  qrisString?: string | null;
+  qrisImageUrl?: string | null;
+  qrisExpiresAt?: Date | string | null;
+  deadline: Date;
+}) {
+  if (!input.qrisString || !input.qrisImageUrl || !input.qrisExpiresAt) {
+    return false;
+  }
+
+  const expiresAt =
+    input.qrisExpiresAt instanceof Date
+      ? input.qrisExpiresAt
+      : new Date(input.qrisExpiresAt);
+
+  return (
+    !Number.isNaN(expiresAt.getTime()) &&
+    expiresAt.getTime() > Date.now() &&
+    expiresAt.getTime() <= input.deadline.getTime()
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -126,13 +181,38 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const paymentDeadline = getDepositPaymentDeadline(booking.scheduledStart);
+    if (paymentDeadline.getTime() <= Date.now()) {
+      await bookingRepository.releaseExpiredPendingBookings({
+        before: new Date(
+          Date.now() + DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
+        ),
+        reason: EXPIRED_DEPOSIT_CANCEL_REASON,
+      });
+
+      return NextResponse.json(
+        {
+          message:
+            "Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat 1 jam sebelum jadwal reservasi.",
+        },
+        { status: 400 },
+      );
+    }
+
     // Return existing payment if already exists (idempotency)
     if (booking.payment) {
-      if (!booking.payment.qrisString || !booking.payment.qrisImageUrl) {
+      if (
+        !hasUsableDepositInvoice({
+          qrisString: booking.payment.qrisString,
+          qrisImageUrl: booking.payment.qrisImageUrl,
+          qrisExpiresAt: booking.payment.qrisExpiresAt,
+          deadline: paymentDeadline,
+        })
+      ) {
         const legacyQris = await createXenditInvoice({
-          externalRef:
-            booking.payment.externalRef ?? `DEPOSIT-${booking.code}-LEGACY`,
+          externalRef: `DEPOSIT-${booking.code}-${Date.now()}`,
           amount: Number(booking.payment.amountDue),
+          expiresAt: paymentDeadline,
         });
 
         const refreshedPayment = await prisma.payment.update({
@@ -189,10 +269,11 @@ export async function POST(request: NextRequest) {
     });
 
     const depositPercentage = depositSetting
-      ? parseInt(depositSetting.value)
-      : 25;
-    const depositAmount =
-      (Number(booking.service.price) * depositPercentage) / 100;
+      ? parseDepositPercentage(depositSetting.value)
+      : DEFAULT_DEPOSIT_PERCENTAGE;
+    const depositAmount = Math.round(
+      (Number(booking.service.price) * depositPercentage) / 100,
+    );
 
     // Generate external reference for Xendit
     const externalRef = `DEPOSIT-${booking.code}-${Date.now()}`;
@@ -201,6 +282,7 @@ export async function POST(request: NextRequest) {
     const qris = await createXenditInvoice({
       externalRef,
       amount: depositAmount,
+      expiresAt: paymentDeadline,
     });
 
     const qrisImageUrl = qris.qrImageUrl;
@@ -239,6 +321,9 @@ export async function POST(request: NextRequest) {
         bookingId: booking.id,
         payment,
         qris,
+        depositPercentage,
+        depositAmount,
+        totalAmount: Number(booking.service.price),
         message: "QRIS deposit payment initialized",
       },
       { status: 202 },

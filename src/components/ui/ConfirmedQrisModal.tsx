@@ -19,9 +19,15 @@ export default function ConfirmedQrisModal({
 
   useEffect(() => {
     if (!isOpen) return;
-    setRemaining(autoCloseSeconds);
-    const tick = setInterval(() => setRemaining((r) => r - 1), 1000);
-    return () => clearInterval(tick);
+    const reset = window.setTimeout(() => setRemaining(autoCloseSeconds), 0);
+    const tick = window.setInterval(
+      () => setRemaining((value) => Math.max(value - 1, 0)),
+      1000,
+    );
+    return () => {
+      window.clearTimeout(reset);
+      window.clearInterval(tick);
+    };
   }, [isOpen, autoCloseSeconds]);
 
   useEffect(() => {

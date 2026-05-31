@@ -264,13 +264,22 @@ export const paymentRepository = {
         return null;
       }
 
+      const effectiveStatus =
+        input.paymentStatus === PaymentStatus.PAID &&
+        payment.isDeposit &&
+        payment.qrisExpiresAt &&
+        (input.paidAt ?? new Date()).getTime() > payment.qrisExpiresAt.getTime()
+          ? PaymentStatus.EXPIRED
+          : input.paymentStatus;
+
       const updatedPayment = await tx.payment.update({
         where: { id: payment.id },
         data: {
-          status: input.paymentStatus,
-          paidAt: input.paidAt,
+          status: effectiveStatus,
+          paidAt:
+            effectiveStatus === PaymentStatus.PAID ? input.paidAt : payment.paidAt,
           amountPaid:
-            input.paymentStatus === PaymentStatus.PAID
+            effectiveStatus === PaymentStatus.PAID
               ? payment.isDeposit
                 ? payment.amountDue
                 : payment.depositAmount
@@ -294,7 +303,7 @@ export const paymentRepository = {
 
       let updatedBooking = booking;
 
-      if (input.paymentStatus === PaymentStatus.PAID) {
+      if (effectiveStatus === PaymentStatus.PAID) {
         // Determine target status based on payment type
         const targetStatus = updatedPayment.isDeposit
           ? BookingStatus.UPCOMING // Deposit payment → ready for service

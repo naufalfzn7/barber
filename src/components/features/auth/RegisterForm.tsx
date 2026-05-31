@@ -3,6 +3,11 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { notifyClientDataChanged } from "@/lib/authClient";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 
 export default function RegisterForm() {
   const router = useRouter();
@@ -13,12 +18,27 @@ export default function RegisterForm() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useToastFeedback({ message, error });
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setLoading(true);
     setError(null);
+    setMessage(null);
+
+    const confirmed = await confirmAction({
+      title: "Daftar member baru?",
+      text: `Akun member untuk ${fullName} akan dibuat.`,
+      confirmButtonText: "Ya, daftar",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const response = await fetch("/api/auth/register", {
@@ -44,7 +64,10 @@ export default function RegisterForm() {
       }
 
       // Auto-login on successful registration
+      setMessage(data.message ?? "Registrasi berhasil");
+      notifyClientDataChanged("auth:changed");
       router.replace("/reservasi");
+      router.refresh();
     } catch {
       setError("Tidak bisa registrasi sekarang");
     } finally {

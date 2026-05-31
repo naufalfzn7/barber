@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 import { navItems, rightNavItems, socialLinks } from "@/lib/data";
 import { NavItem } from "@/types";
 
@@ -208,6 +209,8 @@ export default function Header() {
   const pathname = usePathname();
 
   useEffect(() => {
+    let active = true;
+
     if (pathname === "/login") {
       setSession(null);
       return;
@@ -215,7 +218,7 @@ export default function Header() {
 
     async function loadSession() {
       try {
-        const response = await fetch("/api/auth/me");
+        const response = await authFetch("/api/auth/me", { cache: "no-store" });
         if (!response.ok) {
           setSession(null);
           return;
@@ -228,6 +231,10 @@ export default function Header() {
             branchId?: string | null;
           };
         };
+
+        if (!active) {
+          return;
+        }
 
         setSession(
           data.user?.role && data.user?.fullName
@@ -244,13 +251,20 @@ export default function Header() {
     }
 
     void loadSession();
+    window.addEventListener("auth:changed", loadSession);
+
+    return () => {
+      active = false;
+      window.removeEventListener("auth:changed", loadSession);
+    };
   }, [pathname]);
 
   async function handleLogout() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await authFetch("/api/auth/logout", { method: "POST" });
     } finally {
       setSession(null);
+      notifyClientDataChanged("auth:changed");
       router.refresh();
       router.replace("/");
     }

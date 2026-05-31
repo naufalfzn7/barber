@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 
 type ConfirmState = "loading" | "success" | "error";
 
@@ -29,9 +30,7 @@ export default function XenditSuccessPage() {
 
     async function loadRedirectTarget() {
       try {
-        const response = await fetch("/api/auth/me", {
-          cache: "no-store",
-        });
+        const response = await authFetch("/api/auth/me");
 
         if (!response.ok) {
           return;
@@ -82,7 +81,7 @@ export default function XenditSuccessPage() {
 
     async function confirmPayment() {
       try {
-        const response = await fetch(
+        const response = await authFetch(
           "/api/payments/qris/confirm-by-reference",
           {
             method: "POST",
@@ -105,6 +104,7 @@ export default function XenditSuccessPage() {
         }
 
         const code = json.result?.booking?.code ?? null;
+        notifyClientDataChanged("bookings:changed");
         setBookingCode(code);
         setState("success");
         setMessage(

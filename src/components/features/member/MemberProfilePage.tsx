@@ -5,7 +5,11 @@ import {
   useChangePassword,
   ChangePasswordModal,
 } from "@/components/ui/useChangePassword";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 
 interface MemberInfo {
   id: string;
@@ -15,7 +19,7 @@ interface MemberInfo {
   memberCode?: string;
 }
 
-export default function MemberProfilePage({ userId }: { userId: string }) {
+export default function MemberProfilePage() {
   const [loading, setLoading] = useState(true);
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -35,7 +39,7 @@ export default function MemberProfilePage({ userId }: { userId: string }) {
   useEffect(() => {
     async function fetchMemberInfo() {
       try {
-        const response = await fetch("/api/auth/me");
+        const response = await authFetch("/api/auth/me", { cache: "no-store" });
         if (!response.ok) throw new Error("Failed to fetch member info");
         const data = await response.json();
         setMemberInfo(data.user);
@@ -66,9 +70,19 @@ export default function MemberProfilePage({ userId }: { userId: string }) {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Simpan profil?",
+      text: "Perubahan data profil akan disimpan.",
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setIsSaving(true);
-      const response = await fetch("/api/auth/profile", {
+      const response = await authFetch("/api/auth/profile", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -91,6 +105,7 @@ export default function MemberProfilePage({ userId }: { userId: string }) {
       if (data.user) {
         setMemberInfo(data.user);
       }
+      notifyClientDataChanged("auth:changed");
       setMessage("Profil berhasil diperbarui");
       setIsEditing(false);
     } catch {

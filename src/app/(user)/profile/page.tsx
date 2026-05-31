@@ -16,5 +16,5 @@ export default async function ProfilePage() {
     redirect("/login");
   }
 
-  return <MemberProfilePage userId={payload.sub} />;
+  return <MemberProfilePage />;
 }

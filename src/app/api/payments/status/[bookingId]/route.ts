@@ -5,6 +5,10 @@ import {
 } from "@/server/core/auth";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 
+const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
+const EXPIRED_DEPOSIT_CANCEL_REASON =
+  "Auto canceled because deposit was not paid 1 hour before reservation";
+
 export async function GET(
   request: NextRequest,
   context: { params: Promise<{ bookingId: string }> },
@@ -20,6 +24,13 @@ export async function GET(
   }
 
   try {
+    await bookingRepository.releaseExpiredPendingBookings({
+      before: new Date(
+        Date.now() + DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
+      ),
+      reason: EXPIRED_DEPOSIT_CANCEL_REASON,
+    });
+
     const { bookingId } = await context.params;
     const searchParams = request.nextUrl.searchParams;
     const isDeposit = searchParams.get("isDeposit") === "true";
@@ -56,14 +67,27 @@ export async function GET(
       );
     }
 
+    const expiresAt = booking.payment.qrisExpiresAt;
+    const status =
+      booking.payment.status === "PENDING" &&
+      expiresAt &&
+      expiresAt.getTime() <= Date.now()
+        ? "EXPIRED"
+        : booking.payment.status;
+
     return NextResponse.json(
       {
+        booking: {
+          id: booking.id,
+          status: booking.status,
+        },
         payment: {
           id: booking.payment.id,
-          status: booking.payment.status,
+          status,
           amount: booking.payment.amountDue,
           isDeposit: booking.payment.isDeposit,
           paidAt: booking.payment.paidAt,
+          expiresAt,
         },
       },
       { status: 200 },

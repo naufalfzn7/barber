@@ -7,7 +7,12 @@ import {
   formatIndonesianDateTime,
   formatIndonesianTime,
 } from "@/lib/dateFormat";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 import DepositPaymentModal from "./DepositPaymentModal";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 
 type CatalogBranch = {
   id: string;
@@ -40,8 +45,88 @@ type MemberHistoryItem = {
   service: { name: string; price: number };
   barberman: { name: string };
   branch: { name: string };
-  payment?: { status: string; isDeposit: boolean } | null;
+  payment?: {
+    id: string;
+    status: string;
+    amountDue: number;
+    isDeposit: boolean;
+    depositAmount: number | null;
+    externalRef: string | null;
+    qrisString: string | null;
+    qrisImageUrl: string | null;
+    qrisExpiresAt: string | null;
+  } | null;
 };
+
+type BookingSlot = {
+  start: string;
+  end: string;
+  isAvailable?: boolean;
+  availableBarberIds?: string[];
+};
+
+type ReceiptDetail = {
+  booking: {
+    id: string;
+    code: string;
+    status: string;
+    scheduledStart: string;
+    completedAt: string | null;
+    isWalkIn: boolean;
+    walkInName?: string | null;
+    walkInPhone?: string | null;
+  };
+  branch: {
+    id: string;
+    code: string;
+    name: string;
+  };
+  customer: {
+    fullName?: string | null;
+    email?: string | null;
+    phoneNumber?: string | null;
+  };
+  barberman: {
+    id: string;
+    name: string;
+  } | null;
+  service: {
+    id: string;
+    name: string;
+    price: number;
+  };
+  products: Array<{
+    id: string;
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+  }>;
+  totals: {
+    service: number;
+    products: number;
+    amountDue: number;
+  };
+  payment: {
+    id: string;
+    method: "QRIS" | "CASH";
+    status: string;
+    amountDue: number;
+    amountPaid: number | null;
+    changeAmount: number | null;
+    paidAt: string | null;
+    externalRef: string | null;
+  } | null;
+};
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function formatExpiryDateTime(isoString: string) {
   try {
@@ -106,14 +191,7 @@ export default function MemberBookingPanel() {
   const [barbermanId, setBarbermanId] = useState("");
   const [date, setDate] = useState("");
   const [notes, setNotes] = useState("");
-  const [slots, setSlots] = useState<
-    Array<{
-      start: string;
-      end: string;
-      isAvailable?: boolean;
-      availableBarberIds?: string[];
-    }>
-  >([]);
+  const [slots, setSlots] = useState<BookingSlot[]>([]);
   const [selectedStart, setSelectedStart] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,12 +211,16 @@ export default function MemberBookingPanel() {
     depositPercentage: number;
     depositAmount: number;
     totalAmount: number;
+    initialPayment?: MemberHistoryItem["payment"];
+    requireCreateConfirmation?: boolean;
   } | null>(null);
   const [depositPercentage, setDepositPercentage] = useState(25);
 
   // Receipt/Nota states
-  const [receiptModal, setReceiptModal] = useState<any>(null);
+  const [receiptModal, setReceiptModal] = useState<ReceiptDetail | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
+
+  useToastFeedback({ message, error });
 
   const selectedBranch = useMemo(
     () => branches.find((branch) => branch.id === branchId) ?? null,
@@ -175,7 +257,7 @@ export default function MemberBookingPanel() {
   useEffect(() => {
     async function bootstrap() {
       try {
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await authFetch("/api/auth/me");
         if (!meRes.ok) {
           setRole(null);
           return;
@@ -192,7 +274,7 @@ export default function MemberBookingPanel() {
         }
 
         // Get deposit percentage
-        const depositRes = await fetch(
+        const depositRes = await authFetch(
           "/api/superadmin/settings/deposit",
         ).catch(() => null);
         if (depositRes?.ok) {
@@ -204,7 +286,7 @@ export default function MemberBookingPanel() {
           }
         }
 
-        const catalogRes = await fetch("/api/bookings/catalog");
+        const catalogRes = await authFetch("/api/bookings/catalog");
         const catalogJson = (await catalogRes.json()) as {
           branches?: CatalogBranch[];
           message?: string;
@@ -272,11 +354,9 @@ export default function MemberBookingPanel() {
         query.set("barbermanId", barbermanId);
       }
 
-      const response = await fetch(`/api/bookings/slots?${query.toString()}`, {
-        cache: "no-store",
-      });
+      const response = await authFetch(`/api/bookings/slots?${query.toString()}`);
       const data = (await response.json()) as {
-        slots?: Array<{ start: string; end: string }>;
+        slots?: BookingSlot[];
         message?: string;
       };
 
@@ -304,12 +384,22 @@ export default function MemberBookingPanel() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Buat reservasi?",
+      text: "Reservasi baru akan dibuat untuk slot yang dipilih.",
+      confirmButtonText: "Ya, buat",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     setMessage(null);
 
     try {
-      const response = await fetch("/api/bookings", {
+      const response = await authFetch("/api/bookings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -338,12 +428,15 @@ export default function MemberBookingPanel() {
           depositPercentage,
           depositAmount,
           totalAmount: selectedService?.price || 0,
+          requireCreateConfirmation: true,
         });
         setShowDepositModal(true);
       }
 
       setNotes("");
+      notifyClientDataChanged("bookings:changed");
       await loadSlots();
+      await loadHistory();
     } catch {
       setError("Tidak bisa membuat booking saat ini");
     } finally {
@@ -355,7 +448,7 @@ export default function MemberBookingPanel() {
     setHistoryLoading(true);
 
     try {
-      const response = await fetch("/api/bookings/my", { cache: "no-store" });
+      const response = await authFetch("/api/bookings/my");
       const data = (await response.json()) as {
         bookings?: MemberHistoryItem[];
       };
@@ -381,12 +474,10 @@ export default function MemberBookingPanel() {
       setLoadingReceipt(true);
       setError(null);
 
-      const response = await fetch(`/api/payments/receipt/${bookingId}`, {
-        cache: "no-store",
-      });
+      const response = await authFetch(`/api/payments/receipt/${bookingId}`);
       const json = (await response.json()) as {
         message?: string;
-        receipt?: any;
+        receipt?: ReceiptDetail;
       };
 
       if (!response.ok || !json.receipt) {
@@ -404,9 +495,13 @@ export default function MemberBookingPanel() {
   }
 
   async function cancelPendingBooking(bookingId: string, bookingCode: string) {
-    const confirmed = window.confirm(
-      `Batalkan reservasi ${bookingCode}? Slot akan dilepas untuk pelanggan lain.`,
-    );
+    const confirmed = await confirmAction({
+      title: "Batalkan reservasi?",
+      text: `Reservasi ${bookingCode} akan dibatalkan dan slot dilepas untuk pelanggan lain.`,
+      confirmButtonText: "Ya, batalkan",
+      icon: "warning",
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
@@ -415,7 +510,7 @@ export default function MemberBookingPanel() {
       setCancelingBookingId(bookingId);
       setError(null);
 
-      const response = await fetch("/api/bookings/cancel", {
+      const response = await authFetch("/api/bookings/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookingId }),
@@ -429,7 +524,7 @@ export default function MemberBookingPanel() {
       setMessage("Reservasi berhasil dibatalkan");
       // Update local history immediately and notify other components
       setHistory((prev) => prev.filter((h) => h.id !== bookingId));
-      window.dispatchEvent(new Event("bookings:changed"));
+      notifyClientDataChanged("bookings:changed");
       await loadHistory();
       await loadSlots();
     } catch (err) {
@@ -453,9 +548,9 @@ export default function MemberBookingPanel() {
 
     const productRows = (receiptModal.products ?? [])
       .map(
-        (item: any) => `
+        (item) => `
           <tr>
-            <td style="padding:4px 0; border-bottom:1px dashed #ddd;">${item.itemName}</td>
+            <td style="padding:4px 0; border-bottom:1px dashed #ddd;">${escapeHtml(item.itemName)}</td>
             <td style="padding:4px 0; border-bottom:1px dashed #ddd; text-align:center;">${item.quantity}</td>
             <td style="padding:4px 0; border-bottom:1px dashed #ddd; text-align:right;">Rp ${item.subtotal.toLocaleString("id-ID")}</td>
           </tr>
@@ -465,18 +560,18 @@ export default function MemberBookingPanel() {
 
     const html = `
       <html>
-        <head><title>Nota ${receiptModal.booking.code}</title></head>
+        <head><title>Nota ${escapeHtml(receiptModal.booking.code)}</title></head>
         <body style="font-family:Arial, sans-serif; padding:20px; color:#111;">
-          <h2 style="margin:0;">${receiptModal.branch.name}</h2>
-          <p style="margin:4px 0 16px; font-size:12px; color:#555;">Cabang ${receiptModal.branch.code}</p>
-          <p style="margin:2px 0; font-size:13px;"><strong>No Booking:</strong> ${receiptModal.booking.code}</p>
-          <p style="margin:2px 0; font-size:13px;"><strong>Pelanggan:</strong> ${customerName}</p>
-          <p style="margin:2px 0; font-size:13px;"><strong>Barber:</strong> ${receiptModal.barberman?.name ?? "-"}</p>
+          <h2 style="margin:0;">${escapeHtml(receiptModal.branch.name)}</h2>
+          <p style="margin:4px 0 16px; font-size:12px; color:#555;">Cabang ${escapeHtml(receiptModal.branch.code)}</p>
+          <p style="margin:2px 0; font-size:13px;"><strong>No Booking:</strong> ${escapeHtml(receiptModal.booking.code)}</p>
+          <p style="margin:2px 0; font-size:13px;"><strong>Pelanggan:</strong> ${escapeHtml(customerName)}</p>
+          <p style="margin:2px 0; font-size:13px;"><strong>Barber:</strong> ${escapeHtml(receiptModal.barberman?.name ?? "-")}</p>
           <p style="margin:2px 0; font-size:13px;"><strong>Jadwal:</strong> ${formatIndonesianDateTime(receiptModal.booking.scheduledStart)}</p>
           <hr style="margin:16px 0;" />
           <table style="width:100%; font-size:13px; border-collapse:collapse;">
             <tr>
-              <td style="padding:4px 0;">${receiptModal.service.name}</td>
+              <td style="padding:4px 0;">${escapeHtml(receiptModal.service.name)}</td>
               <td style="text-align:center;">1</td>
               <td style="text-align:right;">Rp ${receiptModal.service.price.toLocaleString("id-ID")}</td>
             </tr>
@@ -484,7 +579,7 @@ export default function MemberBookingPanel() {
           </table>
           <hr style="margin:16px 0;" />
           <p style="margin:2px 0; font-size:13px;"><strong>Total:</strong> Rp ${receiptModal.totals?.amountDue?.toLocaleString("id-ID") ?? "-"}</p>
-          <p style="margin:2px 0; font-size:13px;"><strong>Metode:</strong> ${receiptModal.payment?.method ?? "-"}</p>
+          <p style="margin:2px 0; font-size:13px;"><strong>Metode:</strong> ${escapeHtml(receiptModal.payment?.method ?? "-")}</p>
           <p style="margin:2px 0; font-size:13px;"><strong>Bayar:</strong> ${receiptModal.payment?.amountPaid ? `Rp ${receiptModal.payment.amountPaid.toLocaleString("id-ID")}` : "-"}</p>
           <p style="margin:2px 0; font-size:13px;"><strong>Kembalian:</strong> ${receiptModal.payment?.changeAmount ? `Rp ${receiptModal.payment.changeAmount.toLocaleString("id-ID")}` : "-"}</p>
           <p style="margin:2px 0; font-size:13px;"><strong>Waktu Bayar:</strong> ${paidAtLabel}</p>
@@ -649,7 +744,7 @@ export default function MemberBookingPanel() {
               Pilih Slot
             </p>
             <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
-              {slots.map((slot: any) => {
+              {slots.map((slot) => {
                 const label = formatIndonesianTime(slot.start);
                 const isAvailable = slot.isAvailable ?? true;
 
@@ -760,10 +855,15 @@ export default function MemberBookingPanel() {
                               id: item.id,
                               code: item.code,
                               depositPercentage,
-                              depositAmount: Math.round(
-                                (item.service.price * depositPercentage) / 100,
-                              ),
+                              depositAmount:
+                                item.payment?.depositAmount ??
+                                Math.round(
+                                  (item.service.price * depositPercentage) /
+                                    100,
+                                ),
                               totalAmount: item.service.price,
+                              initialPayment: item.payment ?? null,
+                              requireCreateConfirmation: false,
                             });
                             setShowDepositModal(true);
                           }}
@@ -813,15 +913,19 @@ export default function MemberBookingPanel() {
           remainingAmount={
             pendingBooking.totalAmount - pendingBooking.depositAmount
           }
+          initialPayment={pendingBooking.initialPayment}
+          requireCreateConfirmation={pendingBooking.requireCreateConfirmation}
           onClose={async () => {
             setShowDepositModal(false);
             setPendingBooking(null);
             // Reload history to reflect any payment status changes
+            notifyClientDataChanged("bookings:changed");
             await loadHistory();
           }}
           onSuccess={async () => {
             setShowDepositModal(false);
             setPendingBooking(null);
+            notifyClientDataChanged("bookings:changed");
             await loadHistory();
           }}
           onRefresh={loadHistory}
@@ -916,7 +1020,7 @@ export default function MemberBookingPanel() {
                         Rp {receiptModal.service.price.toLocaleString("id-ID")}
                       </td>
                     </tr>
-                    {(receiptModal.products ?? []).map((item: any) => (
+                    {receiptModal.products.map((item) => (
                       <tr key={item.id} className="border-b border-gray-100">
                         <td className="py-2">{item.itemName}</td>
                         <td className="text-center py-2">{item.quantity}</td>

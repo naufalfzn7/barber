@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { RouteRulesPanel } from "@/components/ui/RouteRulesPanel";
 import { formatIndonesianDate } from "@/lib/dateFormat";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 import {
   useChangePassword,
   ChangePasswordModal,
@@ -285,7 +286,8 @@ export default function SuperAdminLayout({
   async function handleLogout() {
     try {
       setIsLoggingOut(true);
-      await fetch("/api/auth/logout", { method: "POST" });
+      await authFetch("/api/auth/logout", { method: "POST" });
+      notifyClientDataChanged("auth:changed");
       router.replace("/login");
       router.refresh();
     } finally {

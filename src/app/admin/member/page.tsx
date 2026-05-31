@@ -1,8 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useToastFeedback } from "@/components/ui/useToastFeedback";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 import { formatIndonesianDateShort } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 
@@ -45,7 +49,7 @@ export default function MemberPage() {
       try {
         setLoading(true);
 
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await authFetch("/api/auth/me");
         const me = (await meRes.json()) as {
           user?: { role?: Role; branchId?: string | null };
           message?: string;
@@ -57,7 +61,7 @@ export default function MemberPage() {
 
         setRole(me.user.role);
 
-        const catalogRes = await fetch("/api/bookings/catalog");
+        const catalogRes = await authFetch("/api/bookings/catalog");
         const catalog = (await catalogRes.json()) as {
           branches?: CatalogBranch[];
           message?: string;
@@ -100,7 +104,7 @@ export default function MemberPage() {
         query.set("branchId", branchId);
       }
 
-      const response = await fetch(
+      const response = await authFetch(
         `/api/members${query.toString() ? `?${query.toString()}` : ""}`,
       );
       const json = (await response.json()) as {
@@ -132,12 +136,22 @@ export default function MemberPage() {
       return;
     }
 
+    const confirmed = await confirmAction({
+      title: "Daftarkan member?",
+      text: `Member ${fullName} akan dibuat dengan email ${email}.`,
+      confirmButtonText: "Ya, daftarkan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setSaving(true);
       setError(null);
       setMessage(null);
 
-      const response = await fetch("/api/members", {
+      const response = await authFetch("/api/members", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -173,11 +187,23 @@ export default function MemberPage() {
   }
 
   async function resetPassword(memberId: string) {
+    const member = members.find((item) => item.id === memberId);
+    const confirmed = await confirmAction({
+      title: "Reset password member?",
+      text: `Password ${member?.fullName ?? "member ini"} akan diganti dan password sementara baru akan dibuat.`,
+      confirmButtonText: "Ya, reset",
+      icon: "warning",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     try {
       setError(null);
       setMessage(null);
 
-      const response = await fetch(`/api/members/${memberId}/reset-password`, {
+      const response = await authFetch(`/api/members/${memberId}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

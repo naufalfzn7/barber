@@ -5,6 +5,28 @@ import {
 } from "@/server/core/auth";
 import { prisma } from "@/server/db/prisma";
 
+const DEFAULT_DEPOSIT_PERCENTAGE = 25;
+
+function parseDepositPercentage(value: unknown): number | null {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.trim())
+        : Number.NaN;
+
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+
+  const normalized = Math.trunc(parsed);
+  if (normalized < 0 || normalized > 100) {
+    return null;
+  }
+
+  return normalized;
+}
+
 export async function GET(request: NextRequest) {
   const token = getAccessTokenFromRequest(request);
   if (!token) {
@@ -16,12 +38,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
   }
 
-  // Only SUPER_ADMIN can access
-  if (payload.role !== "SUPER_ADMIN") {
-    return NextResponse.json(
-      { message: "Forbidden - only superadmin" },
-      { status: 403 },
-    );
+  if (!["MEMBER", "ADMIN", "SUPER_ADMIN"].includes(payload.role)) {
+    return NextResponse.json({ message: "Forbidden" }, { status: 403 });
   }
 
   try {
@@ -29,7 +47,8 @@ export async function GET(request: NextRequest) {
       where: { key: "DEPOSIT_PERCENTAGE" },
     });
 
-    const depositPercentage = setting ? parseInt(setting.value) : 25;
+    const depositPercentage =
+      parseDepositPercentage(setting?.value) ?? DEFAULT_DEPOSIT_PERCENTAGE;
 
     return NextResponse.json({ depositPercentage }, { status: 200 });
   } catch (error) {
@@ -60,13 +79,9 @@ export async function PATCH(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { depositPercentage } = body;
+    const depositPercentage = parseDepositPercentage(body.depositPercentage);
 
-    if (
-      !depositPercentage ||
-      depositPercentage < 0 ||
-      depositPercentage > 100
-    ) {
+    if (depositPercentage === null) {
       return NextResponse.json(
         { message: "Invalid deposit percentage (must be 0-100)" },
         { status: 400 },

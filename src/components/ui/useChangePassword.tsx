@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { toast } from "sonner";
+import { authFetch } from "@/lib/authClient";
+import { confirmAction } from "./useToastFeedback";
+import Swal from "sweetalert2";
 
 export function useChangePassword() {
   const [showModal, setShowModal] = useState(false);
@@ -12,23 +14,49 @@ export function useChangePassword() {
 
   async function handleChangePassword() {
     if (!oldPassword || !newPassword || !confirmPassword) {
-      toast.error("Semua field wajib diisi");
+      void Swal.fire({
+        title: "Semua field wajib diisi",
+        text: "Mohon lengkapi password lama, password baru, dan konfirmasi password.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
       return;
     }
 
     if (newPassword.length < 6) {
-      toast.error("Password baru minimal 6 karakter");
+      void Swal.fire({
+        title: "Password baru minimal 6 karakter",
+        text: "Mohon gunakan password yang lebih panjang.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      toast.error("Password konfirmasi tidak sesuai");
+      void Swal.fire({
+        title: "Password konfirmasi tidak sesuai",
+        text: "Pastikan konfirmasi password sama dengan password baru.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
+      return;
+    }
+
+    const confirmed = await confirmAction({
+      title: "Ubah password?",
+      text: "Password akun akan diganti dengan password baru.",
+      confirmButtonText: "Ya, ubah",
+      icon: "warning",
+    });
+
+    if (!confirmed) {
       return;
     }
 
     try {
       setLoading(true);
-      const response = await fetch("/api/auth/change-password", {
+      const response = await authFetch("/api/auth/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -43,7 +71,12 @@ export function useChangePassword() {
         throw new Error(json.message ?? "Gagal mengubah password");
       }
 
-      toast.success("Password berhasil diubah");
+      void Swal.fire({
+        title: "Password berhasil diubah",
+        text: "Silakan gunakan password baru pada login berikutnya.",
+        icon: "success",
+        confirmButtonColor: "#111827",
+      });
       setOldPassword("");
       setNewPassword("");
       setConfirmPassword("");
@@ -51,7 +84,12 @@ export function useChangePassword() {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Gagal mengubah password";
-      toast.error(message);
+      void Swal.fire({
+        title: message,
+        text: "Mohon coba lagi. Jika masalah berlanjut, hubungi admin.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
     } finally {
       setLoading(false);
     }

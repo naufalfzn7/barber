@@ -6,6 +6,7 @@ import {
   formatIndonesianDate,
   formatIndonesianDateTime,
 } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type ReportRow = {
   branchId: string;
@@ -103,7 +104,7 @@ export default function LaporanPage() {
         setLoading(true);
         const searchParams = new URLSearchParams();
         searchParams.set("range", dateRange);
-        const response = await fetch(
+        const response = await authFetch(
           `/api/superadmin/reports?${searchParams.toString()}`,
         );
         const json = (await response.json()) as ReportResponse & {

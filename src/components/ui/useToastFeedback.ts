@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { toast } from "sonner";
+import Swal, { type SweetAlertIcon } from "sweetalert2";
 
 function normalizeSuccessMessage(message: string) {
   if (message.trim().length === 0) {
@@ -85,6 +85,28 @@ function getErrorDescription(error: string) {
   return "Mohon coba lagi. Jika masalah berlanjut, hubungi admin.";
 }
 
+export async function confirmAction(input: {
+  title: string;
+  text?: string;
+  confirmButtonText?: string;
+  icon?: SweetAlertIcon;
+  danger?: boolean;
+}) {
+  const result = await Swal.fire({
+    title: input.title,
+    text: input.text,
+    icon: input.icon ?? "question",
+    showCancelButton: true,
+    confirmButtonText: input.confirmButtonText ?? "Ya, lanjutkan",
+    cancelButtonText: "Batal",
+    confirmButtonColor: input.danger ? "#dc2626" : "#111827",
+    cancelButtonColor: "#6b7280",
+    reverseButtons: true,
+  });
+
+  return result.isConfirmed;
+}
+
 export function useToastFeedback(input: {
   message?: string | null;
   error?: string | null;
@@ -127,8 +149,11 @@ export function useToastFeedback(input: {
     lastMessageRef.current = input.message;
     lastMessageShownAtRef.current = now;
     const friendlyMessage = normalizeSuccessMessage(input.message);
-    toast.success(friendlyMessage, {
-      description: getSuccessDescription(friendlyMessage),
+    void Swal.fire({
+      title: friendlyMessage,
+      text: getSuccessDescription(friendlyMessage),
+      icon: "success",
+      confirmButtonColor: "#111827",
     });
   }, [input.message]);
 
@@ -147,8 +172,11 @@ export function useToastFeedback(input: {
     lastErrorRef.current = input.error;
     lastErrorShownAtRef.current = now;
     const friendlyError = normalizeErrorMessage(input.error);
-    toast.error(friendlyError, {
-      description: getErrorDescription(friendlyError),
+    void Swal.fire({
+      title: friendlyError,
+      text: getErrorDescription(friendlyError),
+      icon: "error",
+      confirmButtonColor: "#111827",
     });
   }, [input.error]);
 }

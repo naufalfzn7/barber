@@ -5,8 +5,12 @@ import {
   formatIndonesianDateTime,
   formatIndonesianDate,
 } from "@/lib/dateFormat";
-import { toast } from "sonner";
 import DepositPaymentModal from "./DepositPaymentModal";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
+import {
+  confirmAction,
+  useToastFeedback,
+} from "@/components/ui/useToastFeedback";
 
 interface Booking {
   id: string;
@@ -128,6 +132,8 @@ type Tab = "onProcess" | "history";
 export default function MemberReservationDashboard() {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("onProcess");
   const [selectedBooking, setSelectedBooking] = useState<Booking | null>(null);
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
@@ -139,6 +145,8 @@ export default function MemberReservationDashboard() {
     useState<Booking | null>(null);
   const [paymentModalDepositAmount, setPaymentModalDepositAmount] = useState(0);
 
+  useToastFeedback({ message, error: errorMessage });
+
   // Filter state
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterDateFrom, setFilterDateFrom] = useState("");
@@ -147,13 +155,11 @@ export default function MemberReservationDashboard() {
   const loadBookings = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/bookings/my", {
-        cache: "no-store",
-      });
+      const response = await authFetch("/api/bookings/my");
       const data = await response.json();
       setBookings(data.bookings || []);
     } catch {
-      toast.error("Gagal memuat reservasi");
+      setErrorMessage("Gagal memuat reservasi");
     } finally {
       setLoading(false);
     }
@@ -180,7 +186,7 @@ export default function MemberReservationDashboard() {
 
   async function openPaymentModal(booking: Booking) {
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `/api/payments/status/${booking.id}?isDeposit=true`,
       );
       const data = (await response.json()) as {
@@ -200,16 +206,20 @@ export default function MemberReservationDashboard() {
   }
 
   async function cancelPendingBooking(booking: Booking) {
-    const confirmed = window.confirm(
-      `Batalkan reservasi ${booking.code}? Slot akan dilepas untuk pelanggan lain.`,
-    );
+    const confirmed = await confirmAction({
+      title: "Batalkan reservasi?",
+      text: `Reservasi ${booking.code} akan dibatalkan dan slot dilepas untuk pelanggan lain.`,
+      confirmButtonText: "Ya, batalkan",
+      icon: "warning",
+      danger: true,
+    });
     if (!confirmed) {
       return;
     }
 
     try {
       setCancelingBookingId(booking.id);
-      const response = await fetch("/api/bookings/cancel", {
+      const response = await authFetch("/api/bookings/cancel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookingId: booking.id }),
@@ -220,15 +230,15 @@ export default function MemberReservationDashboard() {
         throw new Error(data.message ?? "Gagal membatalkan booking");
       }
 
-      toast.success("Reservasi berhasil dibatalkan");
+      setMessage("Reservasi berhasil dibatalkan");
       // Optimistically remove from local state so UI updates immediately
       setBookings((prev) => prev.filter((b) => b.id !== booking.id));
       // Notify other components to refresh their data
-      window.dispatchEvent(new Event("bookings:changed"));
+      notifyClientDataChanged("bookings:changed");
       // Re-fetch canonical data from the server
       await loadBookings();
     } catch (error) {
-      toast.error(
+      setErrorMessage(
         error instanceof Error ? error.message : "Gagal membatalkan booking",
       );
     } finally {
@@ -239,15 +249,15 @@ export default function MemberReservationDashboard() {
   async function loadReceipt(bookingId: string) {
     try {
       setLoadingReceipt(true);
-      const response = await fetch(`/api/payments/receipt/${bookingId}`);
+      const response = await authFetch(`/api/payments/receipt/${bookingId}`);
       const data = await response.json();
       if (response.ok) {
         setReceipt(data);
       } else {
-        toast.error(data.message || "Gagal memuat nota");
+        setErrorMessage(data.message || "Gagal memuat nota");
       }
     } catch {
-      toast.error("Gagal memuat nota");
+      setErrorMessage("Gagal memuat nota");
     } finally {
       setLoadingReceipt(false);
     }
@@ -832,6 +842,7 @@ export default function MemberReservationDashboard() {
           onClose={() => setPaymentModalBooking(null)}
           onSuccess={() => {
             setPaymentModalBooking(null);
+            notifyClientDataChanged("bookings:changed");
             void loadBookings();
           }}
           onRefresh={() => {

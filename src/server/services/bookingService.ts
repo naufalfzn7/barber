@@ -2,6 +2,8 @@ import { DayOfWeek, type BookingStatus } from "@prisma/client";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 
 const SLOT_STEP_MINUTES = 15;
+const BUSINESS_TIME_ZONE = "Asia/Jakarta";
+const BUSINESS_UTC_OFFSET_MINUTES = 7 * 60;
 
 type SlotAvailabilityInput = {
   branchId: string;
@@ -63,14 +65,97 @@ function parseTimeToMinutes(value: string): number {
   return hour * 60 + minute;
 }
 
-function toDateAtMinutes(baseDate: Date, minutes: number): Date {
-  const out = new Date(baseDate);
-  out.setHours(0, 0, 0, 0);
-  out.setMinutes(minutes);
-  return out;
+type DateParts = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+function parseDateParts(value: string): DateParts {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) {
+    throw new Error("Invalid date format. Use YYYY-MM-DD");
+  }
+
+  const parts = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+
+  const probe = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  if (
+    probe.getUTCFullYear() !== parts.year ||
+    probe.getUTCMonth() !== parts.month - 1 ||
+    probe.getUTCDate() !== parts.day
+  ) {
+    throw new Error("Invalid date format. Use YYYY-MM-DD");
+  }
+
+  return parts;
 }
 
-function dayOfWeekFromDate(date: Date): DayOfWeek {
+function toBusinessDateAtMinutes(parts: DateParts, minutes: number): Date {
+  return new Date(
+    Date.UTC(
+      parts.year,
+      parts.month - 1,
+      parts.day,
+      0,
+      minutes - BUSINESS_UTC_OFFSET_MINUTES,
+    ),
+  );
+}
+
+function getBusinessDateParts(date: Date): DateParts {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: BUSINESS_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+
+  const value = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return {
+    year: Number(value.year),
+    month: Number(value.month),
+    day: Number(value.day),
+  };
+}
+
+function getBusinessMinutes(date: Date): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: BUSINESS_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+
+  const value = Object.fromEntries(
+    parts
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return Number(value.hour) * 60 + Number(value.minute);
+}
+
+function addDays(parts: DateParts, days: number): DateParts {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function dayOfWeekFromDateParts(parts: DateParts): DayOfWeek {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   const dayMap: DayOfWeek[] = [
     DayOfWeek.SUNDAY,
     DayOfWeek.MONDAY,
@@ -80,7 +165,25 @@ function dayOfWeekFromDate(date: Date): DayOfWeek {
     DayOfWeek.FRIDAY,
     DayOfWeek.SATURDAY,
   ];
-  return dayMap[date.getDay()];
+  return dayMap[date.getUTCDay()];
+}
+
+function getBusinessDayWindow(date: Date) {
+  const parts = getBusinessDateParts(date);
+  return {
+    parts,
+    start: toBusinessDateAtMinutes(parts, 0),
+    end: toBusinessDateAtMinutes(addDays(parts, 1), 0),
+  };
+}
+
+function getBusinessDayWindowFromInput(value: string) {
+  const parts = parseDateParts(value);
+  return {
+    parts,
+    start: toBusinessDateAtMinutes(parts, 0),
+    end: toBusinessDateAtMinutes(addDays(parts, 1), 0),
+  };
 }
 
 function bookingCode(): string {
@@ -103,18 +206,13 @@ function calculateTotalDue(input: {
   return toNumberDecimal(input.servicePrice) + productsTotal;
 }
 
-const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(
-  process.env.PAYMENT_PENDING_TIMEOUT_MINUTES ?? 15,
-);
+const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
 const PAYMENT_EXPIRY_REMINDER_MINUTES = 2;
 
-function getPaymentPendingCutoff(now = new Date()) {
-  return new Date(now.getTime() - PAYMENT_PENDING_TIMEOUT_MINUTES * 60 * 1000);
-}
-
-function getPendingExpiresAt(createdAt: Date) {
+function getPendingExpiresAt(scheduledStart: Date) {
   return new Date(
-    createdAt.getTime() + PAYMENT_PENDING_TIMEOUT_MINUTES * 60 * 1000,
+    scheduledStart.getTime() -
+      DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
   );
 }
 
@@ -189,29 +287,33 @@ function scheduleAllowsSlot(input: {
 export const bookingService = {
   async runPaymentPendingMaintenance() {
     const now = new Date();
-    const cutoff = getPaymentPendingCutoff(now);
+    const cutoff = new Date(
+      now.getTime() + DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
+    );
     const canceled = await bookingRepository.releaseExpiredPendingBookings({
       before: cutoff,
-      reason: `Auto canceled after ${PAYMENT_PENDING_TIMEOUT_MINUTES} minutes without deposit payment`,
+      reason:
+        "Auto canceled because deposit was not paid 1 hour before reservation",
     });
 
-    const reminderAgeStartMinutes =
-      PAYMENT_PENDING_TIMEOUT_MINUTES - PAYMENT_EXPIRY_REMINDER_MINUTES;
-
-    if (reminderAgeStartMinutes > 0) {
-      const windowStart = new Date(
-        now.getTime() - (reminderAgeStartMinutes + 1) * 60 * 1000,
-      );
-      const windowEnd = new Date(
-        now.getTime() - reminderAgeStartMinutes * 60 * 1000,
-      );
-
-      await bookingRepository.notifyPendingBookingsExpiringSoon({
-        windowStart,
-        windowEnd,
-        minutesLeft: PAYMENT_EXPIRY_REMINDER_MINUTES,
-      });
-    }
+    await bookingRepository.notifyPendingBookingsExpiringSoon({
+      windowStart: new Date(
+        now.getTime() +
+          (DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES +
+            PAYMENT_EXPIRY_REMINDER_MINUTES) *
+            60 *
+            1000,
+      ),
+      windowEnd: new Date(
+        now.getTime() +
+          (DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES +
+            PAYMENT_EXPIRY_REMINDER_MINUTES +
+            1) *
+            60 *
+            1000,
+      ),
+      minutesLeft: PAYMENT_EXPIRY_REMINDER_MINUTES,
+    });
 
     return canceled;
   },
@@ -273,16 +375,24 @@ export const bookingService = {
       }),
     );
 
+    withDetails.sort((a, b) => {
+      const aOperational = a.services.length > 0 && a.barbermen.length > 0;
+      const bOperational = b.services.length > 0 && b.barbermen.length > 0;
+
+      if (aOperational !== bOperational) {
+        return aOperational ? -1 : 1;
+      }
+
+      return a.name.localeCompare(b.name);
+    });
+
     return { branches: withDetails };
   },
 
   async getAvailableSlots(input: SlotAvailabilityInput) {
     await bookingService.cleanupExpiredPaymentPendingBookings();
 
-    const date = new Date(input.date);
-    if (Number.isNaN(date.getTime())) {
-      throw new Error("Invalid date format. Use YYYY-MM-DD");
-    }
+    const dayWindow = getBusinessDayWindowFromInput(input.date);
 
     const service = await bookingRepository.findServiceById(input.serviceId);
     if (!service || !service.isActive) {
@@ -298,7 +408,7 @@ export const bookingService = {
       throw new Error("Branch not found or inactive");
     }
 
-    const dayOfWeek = dayOfWeekFromDate(date);
+    const dayOfWeek = dayOfWeekFromDateParts(dayWindow.parts);
     const operatingHour = await bookingRepository.findOperatingHour(
       input.branchId,
       dayOfWeek,
@@ -307,11 +417,6 @@ export const bookingService = {
     if (!operatingHour || operatingHour.isClosed) {
       return { date: input.date, slots: [] };
     }
-
-    const dateStart = new Date(date);
-    dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(dateStart);
-    dateEnd.setDate(dateEnd.getDate() + 1);
 
     const barbermen = await bookingRepository.findBarbermen(
       input.branchId,
@@ -323,16 +428,24 @@ export const bookingService = {
 
     const holidays = await bookingRepository.findHolidays(
       input.branchId,
-      dateStart,
-      dateEnd,
+      dayWindow.start,
+      dayWindow.end,
       input.barbermanId,
     );
 
-    const schedules = await bookingRepository.findBarberSchedules(
-      input.branchId,
-      dateStart,
-      dateEnd,
-    );
+    const [schedules, activeBookings] = await Promise.all([
+      bookingRepository.findBarberSchedules(
+        input.branchId,
+        dayWindow.start,
+        dayWindow.end,
+      ),
+      bookingRepository.findActiveBookingsInWindow({
+        branchId: input.branchId,
+        dateStart: dayWindow.start,
+        dateEnd: dayWindow.end,
+        barbermanId: input.barbermanId,
+      }),
+    ]);
 
     const serviceTotalMinutes = service.durationMinutes + service.bufferMinutes;
     const defaultOpenMinutes = parseTimeToMinutes(operatingHour.openTime);
@@ -350,8 +463,11 @@ export const bookingService = {
       cursor + serviceTotalMinutes <= defaultCloseMinutes;
       cursor += SLOT_STEP_MINUTES
     ) {
-      const slotStart = toDateAtMinutes(dateStart, cursor);
-      const slotEnd = toDateAtMinutes(dateStart, cursor + serviceTotalMinutes);
+      const slotStart = toBusinessDateAtMinutes(dayWindow.parts, cursor);
+      const slotEnd = toBusinessDateAtMinutes(
+        dayWindow.parts,
+        cursor + serviceTotalMinutes,
+      );
 
       const availableBarberIds: string[] = [];
       const unavailableReasons: string[] = [];
@@ -388,14 +504,14 @@ export const bookingService = {
           continue;
         }
 
-        const overlaps = await bookingRepository.findOverlappingBookings({
-          branchId: input.branchId,
-          barbermanId: barberman.id,
-          scheduledStart: slotStart,
-          scheduledEnd: slotEnd,
-        });
+        const overlaps = activeBookings.some(
+          (booking) =>
+            booking.barbermanId === barberman.id &&
+            booking.scheduledStart < slotEnd &&
+            booking.scheduledEnd > slotStart,
+        );
 
-        if (overlaps.length === 0) {
+        if (!overlaps) {
           availableBarberIds.push(barberman.id);
         } else {
           unavailableReasons.push(`${barberman.name} - Sudah dipesan`);
@@ -443,7 +559,8 @@ export const bookingService = {
       throw new Error("No active barberman available");
     }
 
-    const dayOfWeek = dayOfWeekFromDate(scheduledStart);
+    const dayWindow = getBusinessDayWindow(scheduledStart);
+    const dayOfWeek = dayOfWeekFromDateParts(dayWindow.parts);
     const operatingHour = await bookingRepository.findOperatingHour(
       input.branchId,
       dayOfWeek,
@@ -452,25 +569,19 @@ export const bookingService = {
       throw new Error("Selected slot is not available");
     }
 
-    const dateStart = new Date(scheduledStart);
-    dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(dateStart);
-    dateEnd.setDate(dateEnd.getDate() + 1);
-
     const holidays = await bookingRepository.findHolidays(
       input.branchId,
-      dateStart,
-      dateEnd,
+      dayWindow.start,
+      dayWindow.end,
       input.barbermanId,
     );
     const schedules = await bookingRepository.findBarberSchedules(
       input.branchId,
-      dateStart,
-      dateEnd,
+      dayWindow.start,
+      dayWindow.end,
     );
 
-    const slotStartMinutes =
-      scheduledStart.getHours() * 60 + scheduledStart.getMinutes();
+    const slotStartMinutes = getBusinessMinutes(scheduledStart);
     const slotEndMinutes =
       slotStartMinutes + service.durationMinutes + service.bufferMinutes;
     const defaultOpenMinutes = parseTimeToMinutes(operatingHour.openTime);
@@ -568,13 +679,29 @@ export const bookingService = {
         createdAt: booking.createdAt,
         pendingExpiresAt:
           booking.status === "PAYMENT_PENDING"
-            ? getPendingExpiresAt(booking.createdAt)
+            ? (booking.payment?.qrisExpiresAt ??
+              getPendingExpiresAt(booking.scheduledStart))
             : null,
         scheduledStart: booking.scheduledStart,
         scheduledEnd: booking.scheduledEnd,
         service: booking.service,
         barberman: booking.barberman,
         branch: booking.branch,
+        payment: booking.payment
+          ? {
+              id: booking.payment.id,
+              status: booking.payment.status,
+              amountDue: toNumberDecimal(booking.payment.amountDue),
+              isDeposit: booking.payment.isDeposit,
+              depositAmount: booking.payment.depositAmount
+                ? toNumberDecimal(booking.payment.depositAmount)
+                : null,
+              externalRef: booking.payment.externalRef,
+              qrisString: booking.payment.qrisString,
+              qrisImageUrl: booking.payment.qrisImageUrl,
+              qrisExpiresAt: booking.payment.qrisExpiresAt,
+            }
+          : null,
       };
     });
   },
@@ -597,20 +724,14 @@ export const bookingService = {
   async adminDailyDashboard(input: { branchId: string; date?: string }) {
     await bookingService.cleanupExpiredPaymentPendingBookings();
 
-    const baseDate = input.date ? new Date(input.date) : new Date();
-    if (Number.isNaN(baseDate.getTime())) {
-      throw new Error("Invalid date format. Use YYYY-MM-DD");
-    }
-
-    const dateStart = new Date(baseDate);
-    dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(dateStart);
-    dateEnd.setDate(dateEnd.getDate() + 1);
+    const dayWindow = input.date
+      ? getBusinessDayWindowFromInput(input.date)
+      : getBusinessDayWindow(new Date());
 
     const allBookings = await bookingRepository.findAdminDailyBookings(
       input.branchId,
-      dateStart,
-      dateEnd,
+      dayWindow.start,
+      dayWindow.end,
     );
 
     // Admin reservation list should only show bookings that have progressed past DP pending.
@@ -635,7 +756,7 @@ export const bookingService = {
     };
 
     return {
-      date: dateStart.toISOString().slice(0, 10),
+      date: `${dayWindow.parts.year}-${String(dayWindow.parts.month).padStart(2, "0")}-${String(dayWindow.parts.day).padStart(2, "0")}`,
       summary,
       bookings: bookings.map((booking) => ({
         id: booking.id,
@@ -816,7 +937,8 @@ export const bookingService = {
       throw new Error("No active barberman available");
     }
 
-    const dayOfWeek = dayOfWeekFromDate(scheduledStart);
+    const dayWindow = getBusinessDayWindow(scheduledStart);
+    const dayOfWeek = dayOfWeekFromDateParts(dayWindow.parts);
     const operatingHour = await bookingRepository.findOperatingHour(
       input.branchId,
       dayOfWeek,
@@ -825,25 +947,19 @@ export const bookingService = {
       throw new Error("Selected slot is not available");
     }
 
-    const dateStart = new Date(scheduledStart);
-    dateStart.setHours(0, 0, 0, 0);
-    const dateEnd = new Date(dateStart);
-    dateEnd.setDate(dateEnd.getDate() + 1);
-
     const holidays = await bookingRepository.findHolidays(
       input.branchId,
-      dateStart,
-      dateEnd,
+      dayWindow.start,
+      dayWindow.end,
       input.barbermanId,
     );
     const schedules = await bookingRepository.findBarberSchedules(
       input.branchId,
-      dateStart,
-      dateEnd,
+      dayWindow.start,
+      dayWindow.end,
     );
 
-    const slotStartMinutes =
-      scheduledStart.getHours() * 60 + scheduledStart.getMinutes();
+    const slotStartMinutes = getBusinessMinutes(scheduledStart);
     const slotEndMinutes =
       slotStartMinutes + service.durationMinutes + service.bufferMinutes;
     const defaultOpenMinutes = parseTimeToMinutes(operatingHour.openTime);

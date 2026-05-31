@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useToastFeedback } from "@/components/ui/useToastFeedback";
 import { formatIndonesianDate, formatIndonesianTime } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 
@@ -50,10 +51,13 @@ type DashboardResponse = {
 type AlertItem = {
   id: string;
   branchId: string;
-  branchName: string;
-  productName: string;
-  currentStock: number;
-  minStock: number;
+  branchName?: string;
+  productName?: string;
+  currentStock?: number;
+  minStock?: number;
+  name?: string;
+  stockQty?: number;
+  minStockQty?: number;
 };
 
 type AlertsResponse = {
@@ -128,13 +132,13 @@ export default function DashboardPage() {
       try {
         setLoading(true);
 
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await authFetch("/api/auth/me");
         const me = (await meRes.json()) as MeResponse;
         if (!meRes.ok || !me.user?.role) {
           throw new Error(me.message ?? "Gagal memuat sesi");
         }
 
-        const catalogRes = await fetch("/api/bookings/catalog");
+        const catalogRes = await authFetch("/api/bookings/catalog");
         const catalog = (await catalogRes.json()) as CatalogResponse;
         if (!catalogRes.ok) {
           throw new Error(catalog.message ?? "Gagal memuat cabang");
@@ -175,8 +179,8 @@ export default function DashboardPage() {
         }
 
         const [dashboardRes, alertsRes] = await Promise.all([
-          fetch(`/api/bookings/admin/today?${query.toString()}`),
-          fetch(
+          authFetch(`/api/bookings/admin/today?${query.toString()}`),
+          authFetch(
             `/api/inventory/alerts${role === "SUPER_ADMIN" ? `?branchId=${branchId}` : ""}`,
           ),
         ]);
@@ -505,15 +509,16 @@ export default function DashboardPage() {
                 >
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {alert.productName}
+                      {alert.productName ?? alert.name ?? "-"}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      {alert.branchName}
+                      {alert.branchName ?? selectedBranch?.name ?? "-"}
                     </p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs font-semibold text-gray-900">
-                      {alert.currentStock} / {alert.minStock}
+                      {alert.currentStock ?? alert.stockQty ?? 0} /{" "}
+                      {alert.minStock ?? alert.minStockQty ?? 0}
                     </p>
                     <p className="text-[10px] text-gray-400">stok saat ini</p>
                   </div>

@@ -3,7 +3,6 @@ import {
   getAccessTokenFromRequest,
   verifyAccessToken,
 } from "@/server/core/auth";
-import { authService } from "@/server/services/authService";
 import { userRepository } from "@/server/repositories/userRepository";
 
 export async function PATCH(request: NextRequest) {

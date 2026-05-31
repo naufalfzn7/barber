@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useToastFeedback } from "@/components/ui/useToastFeedback";
 import { formatIndonesianDate, formatIndonesianTime } from "@/lib/dateFormat";
+import { authFetch } from "@/lib/authClient";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 
@@ -109,13 +110,13 @@ export default function KeuanganPage() {
       try {
         setLoading(true);
 
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await authFetch("/api/auth/me");
         const me = (await meRes.json()) as MeResponse;
         if (!meRes.ok || !me.user?.role) {
           throw new Error(me.message ?? "Gagal memuat sesi");
         }
 
-        const catalogRes = await fetch("/api/bookings/catalog");
+        const catalogRes = await authFetch("/api/bookings/catalog");
         const catalog = (await catalogRes.json()) as CatalogResponse;
         if (!catalogRes.ok) {
           throw new Error(catalog.message ?? "Gagal memuat cabang");
@@ -155,7 +156,7 @@ export default function KeuanganPage() {
           query.set("branchId", branchId);
         }
 
-        const dashboardRes = await fetch(
+        const dashboardRes = await authFetch(
           `/api/bookings/admin/today?${query.toString()}`,
         );
         const dashboardJson =
@@ -171,7 +172,7 @@ export default function KeuanganPage() {
 
         const paymentEntries = await Promise.all(
           dashboardJson.bookings.map(async (booking) => {
-            const paymentRes = await fetch(
+            const paymentRes = await authFetch(
               `/api/payments/booking/${booking.id}`,
             );
             const paymentJson =

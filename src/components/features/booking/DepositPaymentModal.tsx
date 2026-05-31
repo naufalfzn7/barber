@@ -1,18 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Swal from "sweetalert2";
 import PaymentSuccessModal from "@/components/ui/PaymentSuccessModal";
-
-const PAYMENT_PENDING_TIMEOUT_MINUTES = Number(
-  process.env.NEXT_PUBLIC_PAYMENT_PENDING_TIMEOUT_MINUTES ?? 15,
-);
-
-function getFallbackExpiresAtIso() {
-  return new Date(
-    Date.now() + PAYMENT_PENDING_TIMEOUT_MINUTES * 60 * 1000,
-  ).toISOString();
-}
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
+import { confirmAction } from "@/components/ui/useToastFeedback";
 
 function formatCountdown(seconds: number) {
   const safe = Math.max(seconds, 0);
@@ -49,15 +41,46 @@ function formatExpiryDateTime(isoString: string) {
 
 type PaymentStatus = "PENDING" | "PAID" | "EXPIRED" | "FAILED";
 
+const initializingDepositBookings = new Set<string>();
+
+type InitialDepositPayment = {
+  id?: string | null;
+  status?: string | null;
+  amountDue?: number | null;
+  depositAmount?: number | null;
+  externalRef?: string | null;
+  qrisString?: string | null;
+  qrisImageUrl?: string | null;
+  qrisExpiresAt?: string | null;
+};
+
 interface DepositPaymentModalProps {
   isOpen: boolean;
   bookingId: string;
   bookingCode: string;
   depositAmount: number;
   remainingAmount: number;
+  initialPayment?: InitialDepositPayment | null;
+  requireCreateConfirmation?: boolean;
   onClose: () => void;
   onSuccess: () => void;
   onRefresh?: () => void | Promise<void>;
+}
+
+function normalizeInitialPaymentStatus(
+  initialPayment?: InitialDepositPayment | null,
+): PaymentStatus | "INIT" {
+  const status = initialPayment?.status;
+  if (
+    status === "PENDING" ||
+    status === "PAID" ||
+    status === "EXPIRED" ||
+    status === "FAILED"
+  ) {
+    return status;
+  }
+
+  return "INIT";
 }
 
 export default function DepositPaymentModal({
@@ -66,29 +89,90 @@ export default function DepositPaymentModal({
   bookingCode,
   depositAmount,
   remainingAmount,
+  initialPayment = null,
+  requireCreateConfirmation = true,
   onClose,
   onSuccess,
   onRefresh,
 }: DepositPaymentModalProps) {
   const [loading, setLoading] = useState(false);
-  const [qrCode, setQrCode] = useState("");
+  const [qrCode, setQrCode] = useState(initialPayment?.qrisString ?? "");
   const [paymentStatus, setPaymentStatus] = useState<PaymentStatus | "INIT">(
-    "INIT",
+    normalizeInitialPaymentStatus(initialPayment),
   );
-  const [invoiceId, setInvoiceId] = useState("");
-  const [paymentId, setPaymentId] = useState("");
+  const [invoiceId, setInvoiceId] = useState(initialPayment?.externalRef ?? "");
+  const [paymentId, setPaymentId] = useState(initialPayment?.id ?? "");
   const [pollingPayment, setPollingPayment] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [expiresAt, setExpiresAt] = useState<string | null>(
+    initialPayment?.qrisExpiresAt ?? null,
+  );
   const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
-  const [qrImageUrl, setQrImageUrl] = useState("");
+  const [qrImageUrl, setQrImageUrl] = useState(
+    initialPayment?.qrisImageUrl ?? "",
+  );
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [displayDepositAmount, setDisplayDepositAmount] =
+    useState(depositAmount);
+  const [displayRemainingAmount, setDisplayRemainingAmount] =
+    useState(remainingAmount);
+  const [bookingCanceled, setBookingCanceled] = useState(false);
   const paymentUrl = qrImageUrl || qrCode;
+  const deadlinePassed = expiresAt
+    ? new Date(expiresAt).getTime() <= Date.now()
+    : false;
+  const canRetryPayment =
+    (paymentStatus === "EXPIRED" || paymentStatus === "FAILED") &&
+    !deadlinePassed &&
+    !bookingCanceled;
+  const onRefreshRef = useRef(onRefresh);
+  const initializedBookingRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setDisplayDepositAmount(depositAmount);
+    setDisplayRemainingAmount(remainingAmount);
+  }, [depositAmount, remainingAmount]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      initializedBookingRef.current = null;
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    initializedBookingRef.current = null;
+    setQrCode(initialPayment?.qrisString ?? "");
+    setQrImageUrl(initialPayment?.qrisImageUrl ?? "");
+    setInvoiceId(initialPayment?.externalRef ?? "");
+    setPaymentId(initialPayment?.id ?? "");
+    setExpiresAt(initialPayment?.qrisExpiresAt ?? null);
+    setRemainingSeconds(null);
+    setBookingCanceled(false);
+    setPaymentStatus(normalizeInitialPaymentStatus(initialPayment));
+  }, [bookingId, initialPayment]);
+
+  useEffect(() => {
+    onRefreshRef.current = onRefresh;
+  }, [onRefresh]);
 
   const createDepositPayment = useCallback(async () => {
+    const confirmed = requireCreateConfirmation
+      ? await confirmAction({
+          title: "Buat pembayaran deposit?",
+          text: `QRIS deposit untuk booking ${bookingCode} akan dibuat.`,
+          confirmButtonText: "Ya, buat QRIS",
+        })
+      : true;
+
+    if (!confirmed) {
+      initializingDepositBookings.delete(bookingId);
+      onClose();
+      return;
+    }
+
     setLoading(true);
     try {
-      const response = await fetch("/api/payments/deposit", {
+      const response = await authFetch("/api/payments/deposit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ bookingId }),
@@ -97,7 +181,12 @@ export default function DepositPaymentModal({
       const data = await response.json();
 
       if (!response.ok) {
-        toast.error(data.message || "Gagal membuat pembayaran deposit");
+        void Swal.fire({
+          title: data.message || "Gagal membuat pembayaran deposit",
+          text: "Mohon coba lagi. Jika masalah berlanjut, hubungi admin.",
+          icon: "error",
+          confirmButtonColor: "#111827",
+        });
         return;
       }
 
@@ -106,31 +195,86 @@ export default function DepositPaymentModal({
       setInvoiceId(data.payment?.externalRef || "");
       setPaymentStatus((data.payment?.status as PaymentStatus) || "PENDING");
       setPaymentId(data.payment?.id || "");
-      // Use Xendit expiry as the sole source of truth, fallback to default timeout only if not provided
-      setExpiresAt(data.qris?.expiresAt || getFallbackExpiresAtIso());
+      const actualAmountValue =
+        typeof data.depositAmount === "number"
+          ? data.depositAmount
+          : Number(data.payment?.amountDue);
+      if (Number.isFinite(actualAmountValue)) {
+        const actualDepositAmount = Math.round(actualAmountValue);
+        setDisplayDepositAmount(actualDepositAmount);
+        setDisplayRemainingAmount(
+          Math.max(depositAmount + remainingAmount - actualDepositAmount, 0),
+        );
+      }
+      setExpiresAt(data.qris?.expiresAt || data.payment?.qrisExpiresAt || null);
     } catch {
-      toast.error("Gagal membuat pembayaran deposit");
+      void Swal.fire({
+        title: "Gagal membuat pembayaran deposit",
+        text: "Mohon coba lagi. Jika masalah berlanjut, hubungi admin.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
     } finally {
+      initializingDepositBookings.delete(bookingId);
       setLoading(false);
     }
-  }, [bookingId]);
+  }, [
+    bookingCode,
+    bookingId,
+    depositAmount,
+    onClose,
+    remainingAmount,
+    requireCreateConfirmation,
+  ]);
 
-  // Initialize payment on modal open (only once, not on re-open)
+  // Initialize payment on modal open.
   const retryDeposit = useCallback(async () => {
-    if (!paymentId) {
-      toast.error("Payment ID tidak ditemukan");
+    if (bookingCanceled || deadlinePassed) {
+      void Swal.fire({
+        title: "Batas pembayaran sudah lewat",
+        text: "Reservasi otomatis dibatalkan dan slot sudah dilepas.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
       return;
     }
+
+    if (!paymentId) {
+      void Swal.fire({
+        title: "Payment ID tidak ditemukan",
+        text: "Inisialisasi pembayaran ulang dari booking.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
+      return;
+    }
+
+    const confirmed = await confirmAction({
+      title: "Buat ulang QRIS deposit?",
+      text: `QRIS deposit booking ${bookingCode} akan dibuat ulang.`,
+      confirmButtonText: "Ya, buat ulang",
+      icon: "warning",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
     setRetrying(true);
     try {
-      const response = await fetch("/api/payments/qris/retry", {
+      const response = await authFetch("/api/payments/qris/retry", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ paymentId }),
       });
       const data = await response.json();
       if (!response.ok) {
-        toast.error(data.message || "Gagal retry pembayaran");
+        void Swal.fire({
+          title: data.message || "Gagal retry pembayaran",
+          text: "Mohon coba lagi. Jika masalah berlanjut, hubungi admin.",
+          icon: "error",
+          confirmButtonColor: "#111827",
+        });
         return;
       }
       setQrCode(data.result?.qris?.qrString || "");
@@ -139,20 +283,43 @@ export default function DepositPaymentModal({
       setPaymentStatus(
         (data.result?.payment?.status as PaymentStatus) || "PENDING",
       );
-      setExpiresAt(data.result?.qris?.expiresAt || getFallbackExpiresAtIso());
-      toast.success("QRIS pembayaran baru siap dibayar");
+      setExpiresAt(
+        data.result?.qris?.expiresAt ||
+          data.result?.payment?.qrisExpiresAt ||
+          null,
+      );
+      void Swal.fire({
+        title: "QRIS pembayaran baru siap dibayar",
+        text: "Gunakan link pembayaran terbaru sebelum kedaluwarsa.",
+        icon: "success",
+        confirmButtonColor: "#111827",
+      });
+      notifyClientDataChanged("bookings:changed");
+      void onRefreshRef.current?.();
     } catch {
-      toast.error("Gagal retry pembayaran");
+      void Swal.fire({
+        title: "Gagal retry pembayaran",
+        text: "Mohon coba lagi. Jika masalah berlanjut, hubungi admin.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
     } finally {
       setRetrying(false);
     }
-  }, [paymentId]);
+  }, [bookingCanceled, bookingCode, deadlinePassed, paymentId]);
 
   useEffect(() => {
-    if (isOpen && paymentStatus === "INIT") {
+    if (
+      isOpen &&
+      paymentStatus === "INIT" &&
+      initializedBookingRef.current !== bookingId &&
+      !initializingDepositBookings.has(bookingId)
+    ) {
+      initializedBookingRef.current = bookingId;
+      initializingDepositBookings.add(bookingId);
       void createDepositPayment();
     }
-  }, [isOpen, paymentStatus, createDepositPayment]);
+  }, [bookingId, isOpen, paymentStatus, createDepositPayment]);
 
   useEffect(() => {
     if (!isOpen || paymentStatus !== "PENDING" || !expiresAt) {
@@ -169,6 +336,11 @@ export default function DepositPaymentModal({
     const update = () => {
       const next = Math.floor((target - Date.now()) / 1000);
       setRemainingSeconds(next > 0 ? next : 0);
+      if (next <= 0) {
+        setPaymentStatus("EXPIRED");
+        setBookingCanceled(true);
+        void onRefreshRef.current?.();
+      }
     };
 
     update();
@@ -189,7 +361,7 @@ export default function DepositPaymentModal({
     setPollingPayment(true);
     const pollInterval = setInterval(async () => {
       try {
-        const statusRes = await fetch(
+        const statusRes = await authFetch(
           `/api/payments/status/${bookingId}?isDeposit=true`,
         );
         const statusData = await statusRes.json();
@@ -197,12 +369,28 @@ export default function DepositPaymentModal({
 
         if (newStatus === "PAID") {
           setPaymentStatus("PAID");
-          void onRefresh?.();
-          toast.success("Deposit berhasil dibayar!");
+          notifyClientDataChanged("bookings:changed");
+          void onRefreshRef.current?.();
+          void Swal.fire({
+            title: "Deposit berhasil dibayar!",
+            text: "Reservasi Anda sudah masuk antrean pembayaran deposit.",
+            icon: "success",
+            confirmButtonColor: "#111827",
+          });
           setShowSuccessModal(true);
         } else if (newStatus && newStatus !== paymentStatus) {
           setPaymentStatus(newStatus);
-          void onRefresh?.();
+          void onRefreshRef.current?.();
+        }
+
+        if (statusData.booking?.status === "CANCELED") {
+          setBookingCanceled(true);
+          setPaymentStatus("EXPIRED");
+          void onRefreshRef.current?.();
+        }
+
+        if (statusData.payment?.expiresAt) {
+          setExpiresAt(statusData.payment.expiresAt);
         }
       } catch {
         // Silent fail on polling
@@ -213,20 +401,30 @@ export default function DepositPaymentModal({
       clearInterval(pollInterval);
       setPollingPayment(false);
     };
-  }, [paymentStatus, bookingId, onClose, onSuccess]);
+  }, [paymentStatus, bookingId]);
 
   function copyQrString() {
-    if (!qrCode) {
-      toast.error("QR string belum tersedia");
+    if (!paymentUrl) {
+      void Swal.fire({
+        title: "Link pembayaran belum tersedia",
+        text: "Tunggu QRIS selesai dibuat atau buat ulang pembayaran.",
+        icon: "error",
+        confirmButtonColor: "#111827",
+      });
       return;
     }
-    navigator.clipboard.writeText(qrCode);
-    toast.success("QR string disalin");
+    void navigator.clipboard.writeText(paymentUrl);
+    void Swal.fire({
+      title: "Link pembayaran disalin",
+      text: "Link siap ditempel ke browser atau aplikasi pembayaran.",
+      icon: "success",
+      confirmButtonColor: "#111827",
+    });
   }
 
   function handleSuccessModalClose() {
     setShowSuccessModal(false);
-    void onRefresh?.();
+    void onRefreshRef.current?.();
     onSuccess();
     onClose();
   }
@@ -257,9 +455,21 @@ export default function DepositPaymentModal({
             <div className="flex justify-between text-black/70">
               <span>Harga Layanan:</span>
               <span className="font-semibold">
-                Rp {(depositAmount + remainingAmount).toLocaleString("id-ID")}
+                Rp{" "}
+                {(displayDepositAmount + displayRemainingAmount).toLocaleString(
+                  "id-ID",
+                )}
               </span>
-              <span>Rp {remainingAmount.toLocaleString("id-ID")}</span>
+            </div>
+            <div className="flex justify-between text-black/70">
+              <span>Deposit:</span>
+              <span className="font-semibold">
+                Rp {displayDepositAmount.toLocaleString("id-ID")}
+              </span>
+            </div>
+            <div className="flex justify-between text-black/70">
+              <span>Sisa pembayaran:</span>
+              <span>Rp {displayRemainingAmount.toLocaleString("id-ID")}</span>
             </div>
           </div>
 
@@ -271,7 +481,7 @@ export default function DepositPaymentModal({
           )}
 
           {/* QR Payment Section */}
-          {!loading && qrCode && paymentStatus !== "PAID" && (
+          {!loading && paymentUrl && paymentStatus !== "PAID" && (
             <div className="space-y-4">
               {/* Status Info */}
               <div className="grid grid-cols-1 gap-2 text-xs bg-gray-50 border border-gray-200 p-3 rounded">
@@ -321,24 +531,37 @@ export default function DepositPaymentModal({
               {/* Payment Link Display */}
               <div className="border border-gray-200 rounded-lg p-6 bg-gray-50 flex flex-col items-center justify-center space-y-4">
                 {paymentStatus === "PENDING" && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!paymentUrl) {
-                        toast.error("Link pembayaran belum tersedia");
-                        return;
-                      }
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!paymentUrl) {
+                          void Swal.fire({
+                            title: "Link pembayaran belum tersedia",
+                            text: "Tunggu QRIS selesai dibuat atau buat ulang pembayaran.",
+                            icon: "error",
+                            confirmButtonColor: "#111827",
+                          });
+                          return;
+                        }
 
-                      window.location.replace(paymentUrl);
-                    }}
-                    className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow w-full text-center transition-colors"
-                  >
-                    Bayar Sekarang
-                  </button>
+                        window.location.replace(paymentUrl);
+                      }}
+                      className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow w-full text-center transition-colors"
+                    >
+                      Bayar Sekarang
+                    </button>
+                    <button
+                      type="button"
+                      onClick={copyQrString}
+                      className="border border-gray-300 bg-white text-gray-800 font-semibold py-2.5 px-4 rounded-lg w-full text-center transition-colors hover:bg-gray-100"
+                    >
+                      Salin Link Pembayaran
+                    </button>
+                  </>
                 )}
 
-                {(paymentStatus === "EXPIRED" ||
-                  paymentStatus === "FAILED") && (
+                {canRetryPayment && (
                   <button
                     onClick={() => void retryDeposit()}
                     disabled={retrying}
@@ -354,7 +577,7 @@ export default function DepositPaymentModal({
                 <div className="bg-yellow-50 border border-yellow-200 p-4 rounded text-xs text-black/70">
                   <p className="font-semibold mb-2">Instruksi Pembayaran:</p>
                   <ol className="list-decimal list-inside space-y-1 text-xs">
-                    <li>Klik tombol "Bayar Sekarang" di atas</li>
+                    <li>Klik tombol &quot;Bayar Sekarang&quot; di atas</li>
                     <li>Anda akan diarahkan ke halaman pembayaran Xendit</li>
                     <li>
                       Pilih metode pembayaran yang Anda inginkan (E-Wallet, VA,
@@ -362,7 +585,7 @@ export default function DepositPaymentModal({
                     </li>
                     <li>
                       Selesaikan pembayaran sebesar Rp{" "}
-                      {depositAmount.toLocaleString("id-ID")}
+                      {displayDepositAmount.toLocaleString("id-ID")}
                     </li>
                   </ol>
                 </div>
@@ -371,13 +594,13 @@ export default function DepositPaymentModal({
               {(paymentStatus === "EXPIRED" || paymentStatus === "FAILED") && (
                 <div className="bg-red-50 border border-red-200 p-4 rounded text-xs text-red-700">
                   <p className="font-semibold mb-2">
-                    {paymentStatus === "EXPIRED"
-                      ? "⏰ Waktu pembayaran telah habis"
-                      : "❌ Pembayaran gagal"}
+                    {paymentStatus === "EXPIRED" || bookingCanceled
+                      ? "Waktu pembayaran telah habis"
+                      : "Pembayaran gagal"}
                   </p>
                   <p>
-                    {paymentStatus === "EXPIRED"
-                      ? "Invoice telah kadaluarsa. Silakan generate QR baru dengan mengklik tombol Retry di bawah."
+                    {paymentStatus === "EXPIRED" || bookingCanceled
+                      ? "Reservasi otomatis dibatalkan dan slot sudah dilepas karena deposit tidak dibayar paling lambat 1 jam sebelum jadwal reservasi."
                       : "Pembayaran tidak dapat diproses. Silakan coba lagi dengan mengklik tombol Retry di bawah."}
                   </p>
                 </div>
@@ -435,7 +658,7 @@ export default function DepositPaymentModal({
         isOpen={showSuccessModal}
         title="Deposit Berhasil Dibayar"
         description={`Booking ${bookingCode} sudah aktif dan siap diproses.`}
-        amountLabel={`Nominal: Rp ${depositAmount.toLocaleString("id-ID")}`}
+        amountLabel={`Nominal: Rp ${displayDepositAmount.toLocaleString("id-ID")}`}
         buttonLabel="Lanjutkan"
         onClose={handleSuccessModalClose}
       />

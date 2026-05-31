@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { RouteRulesPanel } from "@/components/ui/RouteRulesPanel";
+import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 import { formatIndonesianDate } from "@/lib/dateFormat";
 import {
   useChangePassword,
@@ -181,7 +182,7 @@ export default function AdminLayout({
   useEffect(() => {
     async function bootstrap() {
       try {
-        const meRes = await fetch("/api/auth/me");
+        const meRes = await authFetch("/api/auth/me", { cache: "no-store" });
         const me = (await meRes.json()) as MeResponse;
 
         if (!meRes.ok || !me.user?.role) {
@@ -193,7 +194,7 @@ export default function AdminLayout({
         setUserEmail(me.user.email ?? "-");
 
         if (me.user.branchId) {
-          const catalogRes = await fetch(
+          const catalogRes = await authFetch(
             `/api/bookings/catalog?branchId=${me.user.branchId}`,
           );
           const catalog = (await catalogRes.json()) as CatalogResponse;
@@ -214,7 +215,8 @@ export default function AdminLayout({
   async function handleLogout() {
     try {
       setIsLoggingOut(true);
-      await fetch("/api/auth/logout", { method: "POST" });
+      await authFetch("/api/auth/logout", { method: "POST" });
+      notifyClientDataChanged("auth:changed");
       router.replace("/login");
       router.refresh();
     } finally {
