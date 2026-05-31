@@ -52,7 +52,7 @@ export async function PATCH(
   try {
     const { bookingId } = await context.params;
     const body = (await request.json()) as {
-      status?: "IN_PROGRESS" | "COMPLETED";
+      status?: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW";
       branchId?: string;
       reason?: string;
     };

@@ -63,7 +63,41 @@ type BookingSlot = {
   end: string;
   isAvailable?: boolean;
   availableBarberIds?: string[];
+  unavailableReason?: string;
 };
+
+function getUnavailableSlotLabel(reason: string | undefined) {
+  if (!reason) {
+    return "Sudah dipesan";
+  }
+
+  const normalizedReason = reason.toLowerCase();
+  if (normalizedReason.includes("sudah dipesan")) {
+    return "Sudah dipesan";
+  }
+
+  if (normalizedReason.includes("tanggal")) {
+    return "Tanggal lewat";
+  }
+
+  if (
+    normalizedReason.includes("deposit") ||
+    normalizedReason.includes("dp") ||
+    normalizedReason.includes("batas pembayaran")
+  ) {
+    return "Lewat batas DP";
+  }
+
+  if (normalizedReason.includes("libur")) {
+    return "Hari libur";
+  }
+
+  if (normalizedReason.includes("jam kerja")) {
+    return "Di luar jam kerja";
+  }
+
+  return "Tidak tersedia";
+}
 
 type ReceiptDetail = {
   booking: {
@@ -747,6 +781,11 @@ export default function MemberBookingPanel() {
               {slots.map((slot) => {
                 const label = formatIndonesianTime(slot.start);
                 const isAvailable = slot.isAvailable ?? true;
+                const unavailableReason =
+                  slot.unavailableReason ?? "Sudah dipesan";
+                const unavailableLabel = getUnavailableSlotLabel(
+                  slot.unavailableReason,
+                );
 
                 return (
                   <button
@@ -761,12 +800,12 @@ export default function MemberBookingPanel() {
                           ? "bg-black text-white border-black"
                           : "bg-white text-black border-black/20 hover:border-black/40"
                     }`}
-                    title={!isAvailable ? "Sudah dipesan" : ""}
+                    title={!isAvailable ? unavailableReason : ""}
                   >
                     <span>{label}</span>
                     {!isAvailable && (
                       <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity bg-gray-50 rounded">
-                        Sudah dipesan
+                        {unavailableLabel}
                       </span>
                     )}
                   </button>

@@ -77,6 +77,8 @@ type DashboardResponse = {
     inProgress: number;
     completed: number;
     paymentPending: number;
+    canceled?: number;
+    noShow?: number;
   };
   bookings: BookingItem[];
 };
@@ -172,11 +174,15 @@ type PaymentSuccessState = {
   method: "QRIS" | "CASH";
 };
 
+type ReservationFilter = "ALL" | BookingItem["status"];
+
 const SUMMARY_STATUS_KEY_MAP = {
   UPCOMING: "upcoming",
   IN_PROGRESS: "inProgress",
   PAYMENT_PENDING: "paymentPending",
   COMPLETED: "completed",
+  CANCELED: "canceled",
+  NO_SHOW: "noShow",
 } as const;
 
 function getSummaryKey(status: BookingItem["status"]) {
@@ -202,6 +208,78 @@ function statusBadge(status: BookingItem["status"]) {
   };
 
   return map[status];
+}
+
+function statusLabel(status: BookingItem["status"]) {
+  const map: Record<BookingItem["status"], string> = {
+    UPCOMING: "Menunggu Datang",
+    IN_PROGRESS: "Sedang Dilayani",
+    PAYMENT_PENDING: "Menunggu Bayar",
+    COMPLETED: "Selesai",
+    CANCELED: "Dibatalkan",
+    NO_SHOW: "Tidak Datang",
+  };
+
+  return map[status];
+}
+
+function paymentLabel(booking: BookingItem) {
+  if (!booking.payment) {
+    return {
+      label: "Belum ada pembayaran",
+      tone: "bg-gray-100 text-gray-600",
+    };
+  }
+
+  if (booking.payment.status === "PAID") {
+    return {
+      label: booking.payment.isDeposit ? "DP sudah bayar" : "Lunas",
+      tone: "bg-emerald-50 text-emerald-700",
+    };
+  }
+
+  if (booking.payment.status === "PENDING") {
+    return {
+      label: "QRIS menunggu",
+      tone: "bg-violet-50 text-violet-700",
+    };
+  }
+
+  return {
+    label: `Payment ${booking.payment.status.toLowerCase()}`,
+    tone: "bg-red-50 text-red-700",
+  };
+}
+
+function timelineSteps(booking: BookingItem) {
+  const paid = booking.payment?.status === "PAID";
+  return [
+    {
+      label: booking.isWalkIn ? "Walk-in dibuat" : "Booking masuk",
+      done: true,
+    },
+    {
+      label: paid ? "Pembayaran tercatat" : "Cek pembayaran",
+      done: paid || booking.status === "IN_PROGRESS" || booking.status === "COMPLETED",
+    },
+    {
+      label:
+        booking.status === "NO_SHOW"
+          ? "Tidak datang"
+          : booking.status === "CANCELED"
+            ? "Dibatalkan"
+            : "Mulai layanan",
+      done:
+        booking.status === "IN_PROGRESS" ||
+        booking.status === "COMPLETED" ||
+        booking.status === "NO_SHOW" ||
+        booking.status === "CANCELED",
+    },
+    {
+      label: booking.status === "COMPLETED" ? "Nota selesai" : "Selesaikan",
+      done: booking.status === "COMPLETED",
+    },
+  ];
 }
 
 export default function ReservasiPage() {
@@ -239,6 +317,8 @@ export default function ReservasiPage() {
   const [loadingReceipt, setLoadingReceipt] = useState(false);
   const [paymentSuccess, setPaymentSuccess] =
     useState<PaymentSuccessState | null>(null);
+  const [reservationFilter, setReservationFilter] =
+    useState<ReservationFilter>("ALL");
 
   const qrisModalOpen = qrisModalVisible && qrisModal !== null;
   const qrisBookingId = qrisModal?.bookingId ?? null;
@@ -314,6 +394,20 @@ export default function ReservasiPage() {
       ) ?? null,
     [data?.bookings, productModal?.bookingId],
   );
+
+  const filteredBookings = useMemo(() => {
+    const bookings = data?.bookings ?? [];
+    const visible =
+      reservationFilter === "ALL"
+        ? bookings
+        : bookings.filter((booking) => booking.status === reservationFilter);
+
+    return [...visible].sort(
+      (first, second) =>
+        new Date(first.scheduledStart).getTime() -
+        new Date(second.scheduledStart).getTime(),
+    );
+  }, [data?.bookings, reservationFilter]);
 
   useEffect(() => {
     if (!selectedBranch) {
@@ -441,11 +535,14 @@ export default function ReservasiPage() {
         const newKey = getSummaryKey(nextStatus);
 
         if (oldKey) {
-          updatedSummary[oldKey] = Math.max(0, updatedSummary[oldKey] - 1);
+          updatedSummary[oldKey] = Math.max(
+            0,
+            (updatedSummary[oldKey] ?? 0) - 1,
+          );
         }
 
         if (newKey) {
-          updatedSummary[newKey] += 1;
+          updatedSummary[newKey] = (updatedSummary[newKey] ?? 0) + 1;
         }
 
         return {
@@ -798,18 +895,28 @@ export default function ReservasiPage() {
 
   async function updateStatus(
     bookingId: string,
-    status: "IN_PROGRESS" | "COMPLETED",
+    status: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW",
   ) {
     const booking = data?.bookings.find((item) => item.id === bookingId);
+    const titleMap = {
+      IN_PROGRESS: "Mulai layanan booking?",
+      COMPLETED: "Tandai booking selesai?",
+      NO_SHOW: "Tandai pelanggan tidak datang?",
+    } as const;
+    const confirmMap = {
+      IN_PROGRESS: "Ya, mulai",
+      COMPLETED: "Ya, selesaikan",
+      NO_SHOW: "Ya, no-show",
+    } as const;
     const confirmed = await confirmAction({
-      title:
-        status === "IN_PROGRESS"
-          ? "Mulai layanan booking?"
-          : "Tandai booking selesai?",
-      text: `Status booking ${booking?.code ?? "ini"} akan diubah menjadi ${status}.`,
-      confirmButtonText:
-        status === "IN_PROGRESS" ? "Ya, mulai" : "Ya, selesaikan",
+      title: titleMap[status],
+      text:
+        status === "NO_SHOW"
+          ? `Booking ${booking?.code ?? "ini"} akan dicatat tidak datang. DP/pembayaran yang sudah tercatat tetap tersimpan di riwayat.`
+          : `Status booking ${booking?.code ?? "ini"} akan diubah menjadi ${statusLabel(status)}.`,
+      confirmButtonText: confirmMap[status],
       icon: "warning",
+      danger: status === "NO_SHOW",
     });
 
     if (!confirmed) {
@@ -820,9 +927,16 @@ export default function ReservasiPage() {
       setError(null);
       setMessage(null);
 
-      const body: { status: "IN_PROGRESS" | "COMPLETED"; branchId?: string } = {
+      const body: {
+        status: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW";
+        branchId?: string;
+        reason?: string;
+      } = {
         status,
       };
+      if (status === "NO_SHOW") {
+        body.reason = "Customer did not arrive for scheduled reservation";
+      }
       if (role === "SUPER_ADMIN") {
         body.branchId = branchId;
       }
@@ -1182,202 +1296,151 @@ export default function ReservasiPage() {
       </div>
 
       {data && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Total
-            </p>
-            <p className="text-xl font-bold text-gray-900 mt-1">
-              {data.summary.total}
-            </p>
-          </div>
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Upcoming
-            </p>
-            <p className="text-xl font-bold text-gray-900 mt-1">
-              {data.summary.upcoming}
-            </p>
-          </div>
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              In Progress
-            </p>
-            <p className="text-xl font-bold text-gray-900 mt-1">
-              {data.summary.inProgress}
-            </p>
-          </div>
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Payment Pending
-            </p>
-            <p className="text-xl font-bold text-gray-900 mt-1">
-              {data.summary.paymentPending}
-            </p>
-          </div>
-          <div className="bg-white border border-gray-100 rounded-xl p-4">
-            <p className="text-xs text-gray-500 uppercase tracking-wide">
-              Completed
-            </p>
-            <p className="text-xl font-bold text-gray-900 mt-1">
-              {data.summary.completed}
-            </p>
-          </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+          {[
+            ["Total", data.summary.total],
+            ["Menunggu", data.summary.upcoming],
+            ["Berjalan", data.summary.inProgress],
+            ["Pending Bayar", data.summary.paymentPending],
+            ["Selesai", data.summary.completed],
+            ["No-show", data.summary.noShow ?? 0],
+          ].map(([label, value]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={() => {
+                const nextFilter: ReservationFilter =
+                  label === "Menunggu"
+                    ? "UPCOMING"
+                    : label === "Berjalan"
+                      ? "IN_PROGRESS"
+                      : label === "Pending Bayar"
+                        ? "PAYMENT_PENDING"
+                        : label === "Selesai"
+                          ? "COMPLETED"
+                          : label === "No-show"
+                            ? "NO_SHOW"
+                            : "ALL";
+                setReservationFilter(nextFilter);
+              }}
+              className="bg-white border border-gray-100 rounded-lg p-4 text-left hover:border-gray-300 transition-colors"
+            >
+              <p className="text-xs text-gray-500 uppercase tracking-wide">
+                {label}
+              </p>
+              <p className="text-xl font-bold text-gray-900 mt-1">{value}</p>
+            </button>
+          ))}
         </div>
       )}
 
-      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100">
-              <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                Pelanggan
-              </th>
-              <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                Layanan
-              </th>
-              <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                Barber
-              </th>
-              <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                Jadwal
-              </th>
-              <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                Status
-              </th>
-              <th className="text-right px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
-                Aksi
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-4 py-8 text-center text-sm text-gray-500"
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2">
+            <div className="flex flex-wrap gap-2">
+              {[
+                ["ALL", "Semua"],
+                ["UPCOMING", "Menunggu"],
+                ["IN_PROGRESS", "Berjalan"],
+                ["COMPLETED", "Selesai"],
+                ["NO_SHOW", "No-show"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setReservationFilter(value as ReservationFilter)}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                    reservationFilter === value
+                      ? "bg-black text-white"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
                 >
-                  Loading...
-                </td>
-              </tr>
-            )}
+                  {label}
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">
+              {filteredBookings.length} reservasi terlihat
+            </p>
+          </div>
 
-            {!loading && (data?.bookings.length ?? 0) === 0 && (
-              <tr>
-                <td
-                  colSpan={6}
-                  className="px-4 py-8 text-center text-sm text-gray-500"
-                >
-                  Tidak ada reservasi pada tanggal ini
-                </td>
-              </tr>
-            )}
+          {loading && (
+            <div className="rounded-lg border border-gray-100 bg-white px-4 py-8 text-center text-sm text-gray-500">
+              Loading...
+            </div>
+          )}
 
-            {!loading &&
-              (data?.bookings ?? []).map((booking) => (
-                <tr
+          {!loading && filteredBookings.length === 0 && (
+            <div className="rounded-lg border border-gray-100 bg-white px-4 py-8 text-center text-sm text-gray-500">
+              Tidak ada reservasi pada filter ini
+            </div>
+          )}
+
+          {!loading &&
+            filteredBookings.map((booking) => {
+              const payment = paymentLabel(booking);
+              const steps = timelineSteps(booking);
+              const customerName =
+                booking.member?.fullName ?? booking.walkInName ?? "Walk-in";
+
+              return (
+                <article
                   key={booking.id}
-                  className="border-b border-gray-50 last:border-b-0"
+                  className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
                 >
-                  <td className="px-4 py-3 text-xs text-gray-900">
-                    {booking.member?.fullName ??
-                      booking.walkInName ??
-                      "Walk-in"}
-                    {booking.isWalkIn && (
-                      <span className="text-[10px] text-orange-600 ml-2">
-                        Walk-in
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">
-                    <div className="space-y-1">
-                      <p>
-                        {booking.service.name}
-                        <span className="text-gray-400 ml-2">
-                          {toRupiah(booking.service.price)}
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-bold text-gray-900">
+                          {customerName}
+                        </h3>
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${statusBadge(booking.status)}`}
+                        >
+                          {statusLabel(booking.status)}
                         </span>
-                      </p>
-                      {booking.products.length > 0 && (
-                        <div className="space-y-0.5">
-                          {booking.products.map((product) => (
-                            <p
-                              key={product.id}
-                              className="text-[11px] text-gray-500"
-                            >
-                              + {product.itemName} x{product.quantity} (
-                              {toRupiah(product.subtotal)})
-                            </p>
-                          ))}
-                        </div>
-                      )}
-                      <p className="text-[11px] font-semibold text-gray-800">
-                        Total tagihan: {toRupiah(booking.totalDue)}
-                      </p>
-                      <p className="text-[11px] font-semibold text-emerald-700">
-                        Sisa tagihan: {toRupiah(booking.remainingDue)}
+                        <span
+                          className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${payment.tone}`}
+                        >
+                          {payment.label}
+                        </span>
+                        {booking.isWalkIn && (
+                          <span className="rounded-full bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-700">
+                            Walk-in
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-1 text-xs text-gray-500">
+                        {booking.code} ·{" "}
+                        {formatIndonesianDateTime(booking.scheduledStart)} ·{" "}
+                        {booking.barberman.name}
                       </p>
                     </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">
-                    {booking.barberman.name}
-                  </td>
-                  <td className="px-4 py-3 text-xs text-gray-700">
-                    {formatIndonesianDateTime(booking.scheduledStart)}
-                  </td>
-                  <td className="px-4 py-3 text-xs">
-                    <span
-                      className={`inline-flex px-2 py-1 rounded-full font-semibold ${statusBadge(booking.status)}`}
-                    >
-                      {booking.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="inline-flex gap-2">
-                      {booking.status === "UPCOMING" && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateStatus(booking.id, "IN_PROGRESS")
-                          }
-                          className="px-2.5 py-1.5 text-[11px] rounded-md bg-black text-white font-semibold"
-                        >
-                          Mulai
-                        </button>
-                      )}
 
-                      {booking.status === "IN_PROGRESS" && (
+                    <div className="flex flex-wrap gap-2">
+                      {booking.status === "UPCOMING" && (
                         <>
                           <button
                             type="button"
                             onClick={() =>
-                              setProductModal({
-                                bookingId: booking.id,
-                                bookingCode: booking.code,
-                                bookingStatus: booking.status,
-                              })
+                              updateStatus(booking.id, "IN_PROGRESS")
                             }
-                            className="px-2.5 py-1.5 text-[11px] rounded-md bg-slate-100 text-slate-700 font-semibold"
+                            className="rounded-md bg-black px-3 py-2 text-[11px] font-semibold text-white"
                           >
-                            Produk
+                            Mulai
                           </button>
                           <button
                             type="button"
-                            onClick={() => payCash(booking)}
-                            className="px-2.5 py-1.5 text-[11px] rounded-md bg-emerald-600 text-white font-semibold"
+                            onClick={() => updateStatus(booking.id, "NO_SHOW")}
+                            className="rounded-md bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-700"
                           >
-                            Cash Sisa
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => payQris(booking)}
-                            className="px-2.5 py-1.5 text-[11px] rounded-md bg-violet-600 text-white font-semibold"
-                          >
-                            QRIS Sisa
+                            No-show
                           </button>
                         </>
                       )}
 
-                      {booking.status === "UPCOMING" && (
+                      {(booking.status === "UPCOMING" ||
+                        booking.status === "IN_PROGRESS") && (
                         <button
                           type="button"
                           onClick={() =>
@@ -1387,17 +1450,36 @@ export default function ReservasiPage() {
                               bookingStatus: booking.status,
                             })
                           }
-                          className="px-2.5 py-1.5 text-[11px] rounded-md bg-slate-100 text-slate-700 font-semibold"
+                          className="rounded-md bg-slate-100 px-3 py-2 text-[11px] font-semibold text-slate-700"
                         >
                           Produk
                         </button>
+                      )}
+
+                      {booking.status === "IN_PROGRESS" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => payCash(booking)}
+                            className="rounded-md bg-emerald-600 px-3 py-2 text-[11px] font-semibold text-white"
+                          >
+                            Cash Sisa
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => payQris(booking)}
+                            className="rounded-md bg-violet-600 px-3 py-2 text-[11px] font-semibold text-white"
+                          >
+                            QRIS Sisa
+                          </button>
+                        </>
                       )}
 
                       {booking.status === "PAYMENT_PENDING" && (
                         <button
                           type="button"
                           onClick={() => openQrisModal(booking)}
-                          className="px-2.5 py-1.5 text-[11px] rounded-md bg-violet-100 text-violet-700 font-semibold"
+                          className="rounded-md bg-violet-100 px-3 py-2 text-[11px] font-semibold text-violet-700"
                         >
                           Detail QRIS
                         </button>
@@ -1407,17 +1489,109 @@ export default function ReservasiPage() {
                         <button
                           type="button"
                           onClick={() => void openReceipt(booking.id)}
-                          className="px-2.5 py-1.5 text-[11px] rounded-md bg-emerald-100 text-emerald-700 font-semibold"
+                          className="rounded-md bg-emerald-100 px-3 py-2 text-[11px] font-semibold text-emerald-700"
                         >
                           Nota
                         </button>
                       )}
                     </div>
-                  </td>
-                </tr>
-              ))}
-          </tbody>
-        </table>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-1 lg:grid-cols-[1fr_240px] gap-4">
+                    <div>
+                      <div className="grid grid-cols-4 gap-2">
+                        {steps.map((step, index) => (
+                          <div key={step.label} className="min-w-0">
+                            <div
+                              className={`h-1.5 rounded-full ${
+                                step.done ? "bg-emerald-500" : "bg-gray-200"
+                              }`}
+                            />
+                            <p
+                              className={`mt-1 text-[11px] font-semibold ${
+                                step.done ? "text-gray-900" : "text-gray-400"
+                              }`}
+                            >
+                              {index + 1}. {step.label}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="mt-4 rounded-lg bg-gray-50 p-3 text-xs">
+                        <p className="font-semibold text-gray-900">
+                          {booking.service.name}
+                          <span className="ml-2 font-normal text-gray-500">
+                            {toRupiah(booking.service.price)}
+                          </span>
+                        </p>
+                        {booking.products.length > 0 && (
+                          <div className="mt-2 space-y-1 text-gray-600">
+                            {booking.products.map((product) => (
+                              <p key={product.id}>
+                                + {product.itemName} x{product.quantity} ·{" "}
+                                {toRupiah(product.subtotal)}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border border-gray-100 p-3 text-xs">
+                      <p className="flex justify-between gap-3">
+                        <span className="text-gray-500">Total</span>
+                        <span className="font-bold text-gray-900">
+                          {toRupiah(booking.totalDue)}
+                        </span>
+                      </p>
+                      <p className="mt-2 flex justify-between gap-3">
+                        <span className="text-gray-500">Sisa</span>
+                        <span className="font-bold text-emerald-700">
+                          {toRupiah(booking.remainingDue)}
+                        </span>
+                      </p>
+                      <p className="mt-2 flex justify-between gap-3">
+                        <span className="text-gray-500">Sudah bayar</span>
+                        <span className="font-semibold text-gray-900">
+                          {toRupiah(booking.payment?.amountPaid ?? 0)}
+                        </span>
+                      </p>
+                      {booking.status === "NO_SHOW" && (
+                        <p className="mt-3 rounded-md bg-red-50 px-2 py-2 text-red-700">
+                          Booking ditutup sebagai tidak datang. Pembayaran yang
+                          sudah masuk tetap tercatat.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+        </div>
+
+        <aside className="space-y-3">
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
+            <h3 className="text-sm font-bold text-blue-950">Alur Admin</h3>
+            <ol className="mt-3 space-y-2 text-xs text-blue-950">
+              <li>1. Cek jam, barber, pembayaran, dan sisa tagihan.</li>
+              <li>2. Klik Mulai saat pelanggan datang.</li>
+              <li>3. Tambah produk sebelum pelunasan.</li>
+              <li>4. Selesaikan pembayaran, lalu cetak nota.</li>
+            </ol>
+          </div>
+
+          <div className="rounded-lg border border-red-100 bg-red-50 p-4">
+            <h3 className="text-sm font-bold text-red-950">
+              Jika Sudah Bayar tapi Tidak Datang
+            </h3>
+            <p className="mt-2 text-xs leading-5 text-red-900">
+              Pakai No-show saat status masih menunggu. DP/pembayaran tetap
+              masuk riwayat, slot tidak dianggap sedang dilayani, dan laporan
+              bisa bedakan selesai vs tidak datang.
+            </p>
+          </div>
+        </aside>
       </div>
 
       {loadingReceipt && (

@@ -36,7 +36,7 @@ type UpdateBookingStatusInput = {
   bookingId: string;
   changedById: string;
   branchId: string;
-  newStatus: "IN_PROGRESS" | "COMPLETED";
+  newStatus: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW";
   reason?: string;
 };
 
@@ -1039,7 +1039,12 @@ export const bookingService = {
     };
 
     const expectedNext = allowedTransition[booking.status];
-    if (!expectedNext || expectedNext !== input.newStatus) {
+    const isNoShowFromUpcoming =
+      booking.status === "UPCOMING" && input.newStatus === "NO_SHOW";
+    if (
+      !isNoShowFromUpcoming &&
+      (!expectedNext || expectedNext !== input.newStatus)
+    ) {
       throw new Error("Invalid booking status transition");
     }
 
