@@ -55,6 +55,37 @@ function formatRupiah(value: number) {
   }).format(value);
 }
 
+function ServiceGridSkeleton() {
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {Array.from({ length: 4 }).map((_, index) => (
+        <div
+          key={index}
+          className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm space-y-4"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1 space-y-2">
+              <div className="h-4 w-2/3 rounded bg-gray-200 animate-pulse" />
+              <div className="h-3 w-full rounded bg-gray-100 animate-pulse" />
+              <div className="h-3 w-1/2 rounded bg-gray-100 animate-pulse" />
+            </div>
+            <div className="h-6 w-16 rounded-full bg-gray-100 animate-pulse" />
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+            <div className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+            <div className="h-16 rounded-lg bg-gray-100 animate-pulse" />
+          </div>
+          <div className="flex gap-2">
+            <div className="h-9 flex-1 rounded-lg bg-gray-100 animate-pulse" />
+            <div className="h-9 flex-1 rounded-lg bg-gray-100 animate-pulse" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function LayananPage() {
   const [services, setServices] = useState<ServiceItem[]>([]);
   const [branches, setBranches] = useState<BranchOption[]>([]);
@@ -303,9 +334,9 @@ export default function LayananPage() {
         </div>
       </div>
 
-      {loading && <div className="text-sm text-gray-500">Loading...</div>}
+      {loading && <ServiceGridSkeleton />}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {!loading && <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filteredServices.map((service) => (
           <div
             key={service.id}
@@ -381,7 +412,7 @@ export default function LayananPage() {
             </div>
           </div>
         ))}
-      </div>
+      </div>}
 
       {!loading && filteredServices.length === 0 && (
         <div className="bg-gray-50 rounded-xl p-10 text-center">

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { paymentRepository } from "@/server/repositories/paymentRepository";
+import { revalidateBookingData, revalidateInventoryData } from "@/server/core/revalidate";
 import { paymentService } from "@/server/services/paymentService";
 
 export async function POST(request: NextRequest) {
@@ -53,6 +54,8 @@ export async function POST(request: NextRequest) {
         branchId: auth.branchId,
       },
     });
+    revalidateBookingData();
+    revalidateInventoryData();
 
     return NextResponse.json(
       {

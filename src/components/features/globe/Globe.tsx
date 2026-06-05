@@ -103,15 +103,6 @@ type TopologyJson = {
   };
 };
 
-type TopojsonWindow = Window & {
-  topojson: {
-    feature: (
-      topology: TopologyJson,
-      object: unknown,
-    ) => { features: unknown[] };
-  };
-};
-
 function GlobeComponent({ locations }: GlobeComponentProps) {
   const globeEl = useRef<GlobeInstance | null>(null);
   const [countries, setCountries] = useState<{ features: unknown[] }>({
@@ -168,26 +159,27 @@ function GlobeComponent({ locations }: GlobeComponentProps) {
     `;
     document.head.appendChild(style);
 
-    const script = document.createElement("script");
-    script.src =
-      "https://unpkg.com/topojson-client@3/dist/topojson-client.min.js";
-    script.onload = () => {
-      fetch("https://unpkg.com/world-atlas@2.0.2/countries-50m.json")
-        .then((res) => res.json())
-        .then((topoData: TopologyJson) => {
-          const topo = (window as unknown as TopojsonWindow).topojson;
-          setCountries({
-            features: topo.feature(topoData, topoData.objects.countries)
-              .features,
-          });
-        })
-        .catch(() => setWebGLSupported(false));
-    };
-    script.onerror = () => setWebGLSupported(false);
-    document.head.appendChild(script);
+    Promise.all([
+      import("topojson-client"),
+      fetch("https://unpkg.com/world-atlas@2.0.2/countries-50m.json").then(
+        (res) => res.json() as Promise<TopologyJson>,
+      ),
+    ])
+      .then(([topojson, topoData]) => {
+        const topology = topoData as unknown as Parameters<
+          typeof topojson.feature
+        >[0];
+        const countriesObject = topoData.objects.countries as Parameters<
+          typeof topojson.feature
+        >[1];
+        const geoJson = topojson.feature(topology, countriesObject);
+        setCountries({
+          features: "features" in geoJson ? geoJson.features : [geoJson],
+        });
+      })
+      .catch(() => setWebGLSupported(false));
 
     return () => {
-      if (document.head.contains(script)) document.head.removeChild(script);
       if (document.head.contains(style)) document.head.removeChild(style);
     };
   }, []);
@@ -266,7 +258,10 @@ const GlobeNoSSR = dynamic(
     Promise.resolve(({ locations }: GlobeComponentProps) => (
       <GlobeComponent locations={locations} />
     )),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => <GlobeFallback locations={[]} />,
+  },
 );
 
 interface GlobeWrapperProps {

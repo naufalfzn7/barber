@@ -3,6 +3,7 @@ import {
   getAccessTokenFromRequest,
   verifyAccessToken,
 } from "@/server/core/auth";
+import { revalidateBookingData, revalidateSuperadminData } from "@/server/core/revalidate";
 import { prisma } from "@/server/db/prisma";
 
 const DEFAULT_DEPOSIT_PERCENTAGE = 25;
@@ -97,6 +98,8 @@ export async function PATCH(request: NextRequest) {
         description: "Default deposit percentage for member bookings (0-100)",
       },
     });
+    revalidateBookingData();
+    revalidateSuperadminData();
 
     return NextResponse.json(
       { depositPercentage, message: "Setting updated" },

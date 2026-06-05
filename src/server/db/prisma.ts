@@ -5,21 +5,36 @@ import { env } from "@/server/core/env";
 
 const globalForPrisma = globalThis as unknown as {
   prisma?: PrismaClient;
+  prismaPool?: Pool;
 };
 
-const pool = new Pool({
-  connectionString: env.databaseUrl,
-});
+function createPrismaClient() {
+  const pool =
+    globalForPrisma.prismaPool ??
+    new Pool({
+      connectionString: env.databaseUrl,
+    });
 
-const adapter = new PrismaPg(pool);
+  if (process.env.NODE_ENV !== "production") {
+    globalForPrisma.prismaPool = pool;
+  }
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    adapter,
+  return new PrismaClient({
+    adapter: new PrismaPg(pool),
     log: process.env.APP_ENV === "development" ? ["warn", "error"] : ["error"],
   });
-
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.prisma = prisma;
 }
+
+export function getPrisma() {
+  if (!globalForPrisma.prisma) {
+    globalForPrisma.prisma = createPrismaClient();
+  }
+
+  return globalForPrisma.prisma;
+}
+
+export const prisma = new Proxy({} as PrismaClient, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getPrisma(), prop, receiver);
+  },
+});

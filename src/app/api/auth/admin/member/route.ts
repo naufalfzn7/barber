@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateSuperadminData } from "@/server/core/revalidate";
 import { authService } from "@/server/services/authService";
 
 export async function POST(request: NextRequest) {
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
       phoneNumber: body.phoneNumber,
       branchId: body.branchId ?? auth.branchId ?? undefined,
     });
+    revalidateSuperadminData();
 
     return NextResponse.json(
       {

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { bookingService } from "@/server/services/bookingService";
+import { revalidateBookingData, revalidateInventoryData } from "@/server/core/revalidate";
 
 function resolveBranchId(
   auth: { role: "MEMBER" | "ADMIN" | "SUPER_ADMIN"; branchId?: string | null },
@@ -69,6 +70,8 @@ export async function POST(
       quantity: body.quantity ?? 0,
       changedById: auth.sub,
     });
+    revalidateBookingData();
+    revalidateInventoryData();
 
     return NextResponse.json(
       {
@@ -111,6 +114,8 @@ export async function DELETE(
       bookingProductId: body.bookingProductId ?? "",
       changedById: auth.sub,
     });
+    revalidateBookingData();
+    revalidateInventoryData();
 
     return NextResponse.json(
       {

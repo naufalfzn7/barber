@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateBookingData, revalidateSuperadminData } from "@/server/core/revalidate";
 import { schedulingService } from "@/server/services/schedulingService";
 
 export async function GET(request: NextRequest) {
@@ -57,6 +58,8 @@ export async function PATCH(request: NextRequest) {
       role: auth.role,
       branchId: auth.branchId,
     });
+    revalidateBookingData();
+    revalidateSuperadminData();
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (error) {

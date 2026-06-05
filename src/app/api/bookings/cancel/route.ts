@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { bookingService } from "@/server/services/bookingService";
+import { revalidateBookingData } from "@/server/core/revalidate";
 
 export async function POST(request: NextRequest) {
   const auth = requireRole(request, ["MEMBER"]);
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
       bookingId: body.bookingId,
       memberId: auth.sub,
     });
+    revalidateBookingData();
 
     return NextResponse.json(
       {

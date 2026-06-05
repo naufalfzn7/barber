@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import Swal, { type SweetAlertIcon } from "sweetalert2";
+import type { SweetAlertIcon } from "sweetalert2";
+
+async function getSwal() {
+  const mod = await import("sweetalert2");
+  return mod.default;
+}
 
 function normalizeSuccessMessage(message: string) {
   if (message.trim().length === 0) {
@@ -92,6 +97,7 @@ export async function confirmAction(input: {
   icon?: SweetAlertIcon;
   danger?: boolean;
 }) {
+  const Swal = await getSwal();
   const result = await Swal.fire({
     title: input.title,
     text: input.text,
@@ -149,12 +155,14 @@ export function useToastFeedback(input: {
     lastMessageRef.current = input.message;
     lastMessageShownAtRef.current = now;
     const friendlyMessage = normalizeSuccessMessage(input.message);
-    void Swal.fire({
-      title: friendlyMessage,
-      text: getSuccessDescription(friendlyMessage),
-      icon: "success",
-      confirmButtonColor: "#111827",
-    });
+    void getSwal().then((Swal) =>
+      Swal.fire({
+        title: friendlyMessage,
+        text: getSuccessDescription(friendlyMessage),
+        icon: "success",
+        confirmButtonColor: "#111827",
+      }),
+    );
   }, [input.message]);
 
   useEffect(() => {
@@ -172,11 +180,13 @@ export function useToastFeedback(input: {
     lastErrorRef.current = input.error;
     lastErrorShownAtRef.current = now;
     const friendlyError = normalizeErrorMessage(input.error);
-    void Swal.fire({
-      title: friendlyError,
-      text: getErrorDescription(friendlyError),
-      icon: "error",
-      confirmButtonColor: "#111827",
-    });
+    void getSwal().then((Swal) =>
+      Swal.fire({
+        title: friendlyError,
+        text: getErrorDescription(friendlyError),
+        icon: "error",
+        confirmButtonColor: "#111827",
+      }),
+    );
   }, [input.error]);
 }

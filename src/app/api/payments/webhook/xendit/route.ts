@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/server/core/env";
+import { revalidateBookingData } from "@/server/core/revalidate";
 import { paymentService } from "@/server/services/paymentService";
 
 type RawXenditWebhookPayload = {
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
     };
 
     const result = await paymentService.handleXenditWebhook(normalizedPayload);
+    revalidateBookingData();
 
     return NextResponse.json(
       {

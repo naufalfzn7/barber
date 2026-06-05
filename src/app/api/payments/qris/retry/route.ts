@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateBookingData } from "@/server/core/revalidate";
 import { paymentService } from "@/server/services/paymentService";
 import { paymentRepository } from "@/server/repositories/paymentRepository";
 
@@ -42,6 +43,7 @@ export async function POST(request: NextRequest) {
         branchId: auth.branchId,
       },
     });
+    revalidateBookingData();
 
     return NextResponse.json(
       {

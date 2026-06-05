@@ -3,6 +3,7 @@ import {
   getAccessTokenFromRequest,
   verifyAccessToken,
 } from "@/server/core/auth";
+import { revalidateBookingData, revalidateSuperadminData } from "@/server/core/revalidate";
 import { prisma } from "@/server/db/prisma";
 import {
   DEPOSIT_PAYMENT_DEADLINE_SETTING_KEY,
@@ -80,6 +81,8 @@ export async function PATCH(request: NextRequest) {
           "Deposit payment deadline before reservation time, in hours",
       },
     });
+    revalidateBookingData();
+    revalidateSuperadminData();
 
     return NextResponse.json(
       { depositPaymentDeadlineHours, message: "Setting updated" },

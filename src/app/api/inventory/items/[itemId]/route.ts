@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateInventoryData } from "@/server/core/revalidate";
 import { inventoryService } from "@/server/services/inventoryService";
 
 function resolveBranchId(
@@ -81,6 +82,7 @@ export async function PATCH(
         branchId: auth.branchId,
       },
     );
+    revalidateInventoryData();
 
     return NextResponse.json(
       {
@@ -129,6 +131,7 @@ export async function DELETE(
         branchId: auth.branchId,
       },
     );
+    revalidateInventoryData();
 
     return NextResponse.json(
       {

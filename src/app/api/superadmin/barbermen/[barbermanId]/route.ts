@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateSuperadminData } from "@/server/core/revalidate";
 import { superadminService } from "@/server/services/superadminService";
 
 export async function PATCH(
@@ -29,6 +30,7 @@ export async function PATCH(
       defaultDuration: body.defaultDuration,
       isActive: body.isActive,
     });
+    revalidateSuperadminData();
 
     return NextResponse.json(
       {
@@ -56,6 +58,7 @@ export async function DELETE(
   try {
     const { barbermanId } = await context.params;
     await superadminService.deleteBarberman(barbermanId);
+    revalidateSuperadminData();
 
     return NextResponse.json(
       {

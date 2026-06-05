@@ -1,6 +1,7 @@
 import { InventoryMovementType } from "@prisma/client";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateInventoryData } from "@/server/core/revalidate";
 import { inventoryService } from "@/server/services/inventoryService";
 
 function resolveBranchId(
@@ -142,6 +143,7 @@ export async function POST(request: NextRequest) {
         branchId: auth.branchId,
       },
     );
+    revalidateInventoryData();
 
     return NextResponse.json(
       {

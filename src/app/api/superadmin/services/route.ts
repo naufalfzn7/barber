@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateSuperadminData } from "@/server/core/revalidate";
 import { superadminService } from "@/server/services/superadminService";
 
 export async function GET(request: NextRequest) {
@@ -53,6 +54,7 @@ export async function POST(request: NextRequest) {
       durationMinutes: body.durationMinutes,
       bufferMinutes: body.bufferMinutes,
     });
+    revalidateSuperadminData();
 
     return NextResponse.json(
       {

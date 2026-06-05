@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
+import { revalidateSuperadminData } from "@/server/core/revalidate";
 import { authService } from "@/server/services/authService";
 
 function resolveBranchId(
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
       branchId: scope.branchId,
       actorId: auth.sub,
     });
+    revalidateSuperadminData();
 
     return NextResponse.json(
       {

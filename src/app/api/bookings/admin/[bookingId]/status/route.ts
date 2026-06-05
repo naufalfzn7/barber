@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { bookingService } from "@/server/services/bookingService";
+import { revalidateBookingData } from "@/server/core/revalidate";
 
 function resolveBranchId(
   auth: { role: "MEMBER" | "ADMIN" | "SUPER_ADMIN"; branchId?: string | null },
@@ -76,6 +77,7 @@ export async function PATCH(
       newStatus: body.status,
       reason: body.reason,
     });
+    revalidateBookingData();
 
     return NextResponse.json(
       {

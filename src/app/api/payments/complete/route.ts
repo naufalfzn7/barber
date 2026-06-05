@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { paymentService } from "@/server/services/paymentService";
+import { revalidateBookingData, revalidateInventoryData } from "@/server/core/revalidate";
 
 export async function POST(request: NextRequest) {
   const auth = requireRole(request, ["ADMIN", "SUPER_ADMIN"]);
@@ -32,6 +33,8 @@ export async function POST(request: NextRequest) {
         branchId: auth.branchId,
       },
     });
+    revalidateBookingData();
+    revalidateInventoryData();
 
     return NextResponse.json(
       {
