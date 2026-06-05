@@ -1,0 +1,4 @@
+.env
+.env.*
+!.env.example
+.codex-dev-3000.log
