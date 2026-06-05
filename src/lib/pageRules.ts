@@ -13,22 +13,7 @@ type RuleRoute = {
 };
 
 export const pageRulesByScope: Record<RuleScope, RuleRoute[]> = {
-  user: [
-    {
-      path: "/about-us",
-      rule: {
-        title: "Tentang Kami",
-        usage: [
-          "Baca profil brand dan standar layanan sebelum berkunjung.",
-          "Gunakan informasi ini untuk memahami positioning layanan.",
-        ],
-        forbidden: [
-          "Jangan mengandalkan halaman ini untuk ketersediaan slot real-time.",
-          "Jangan gunakan data ini untuk keputusan operasional harian.",
-        ],
-      },
-    },
-  ],
+  user: [],
   admin: [
     {
       path: "/admin/dashboard",
