@@ -22,22 +22,22 @@ const yogyakartaData: LocationPageData = {
   barbers: [
     {
       name: "Evelyn",
-      image: "/images/barbers/barber1.jpg",
+      image: "/images/barbers/yogyakarta/barber1.jpg",
       bookingUrl: "/reservasi",
     },
     {
       name: "Joel",
-      image: "/images/barbers/barber2.webp",
+      image: "/images/barbers/yogyakarta/barber2.webp",
       bookingUrl: "/reservasi",
     },
     {
       name: "Lloyd",
-      image: "/images/barbers/barber3.jpg",
+      image: "/images/barbers/yogyakarta/barber3.jpg",
       bookingUrl: "/reservasi",
     },
     {
       name: "Sammy",
-      image: "/images/barbers/barber4.png",
+      image: "/images/barbers/yogyakarta/barber4.png",
       bookingUrl: "/reservasi",
     },
   ],

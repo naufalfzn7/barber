@@ -31,7 +31,7 @@ export const galleryImages: GalleryImage[] = [
     category: "Haircut",
   },
   {
-    src: "/images/gallery/mullet1.png",
+    src: "/images/gallery/mullet1.jpg",
     name: "Mullet",
     category: "Haircut",
   },

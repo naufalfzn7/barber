@@ -4,10 +4,11 @@ import {
   verifyAccessToken,
 } from "@/server/core/auth";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
-
-const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
-const EXPIRED_DEPOSIT_CANCEL_REASON =
-  "Auto canceled because deposit was not paid 1 hour before reservation";
+import {
+  formatDepositDeadlineLabel,
+  getDepositPaymentDeadlineHours,
+  getExpiredPendingBookingCutoff,
+} from "@/server/services/depositSettings";
 
 export async function GET(
   request: NextRequest,
@@ -24,11 +25,13 @@ export async function GET(
   }
 
   try {
+    const deadlineHours = await getDepositPaymentDeadlineHours();
     await bookingRepository.releaseExpiredPendingBookings({
-      before: new Date(
-        Date.now() + DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
-      ),
-      reason: EXPIRED_DEPOSIT_CANCEL_REASON,
+      before: getExpiredPendingBookingCutoff({
+        now: new Date(),
+        deadlineHours,
+      }),
+      reason: `Auto canceled because deposit was not paid ${formatDepositDeadlineLabel(deadlineHours)} sebelum reservasi`,
     });
 
     const { bookingId } = await context.params;

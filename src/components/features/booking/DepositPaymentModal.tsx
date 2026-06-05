@@ -600,7 +600,7 @@ export default function DepositPaymentModal({
                   </p>
                   <p>
                     {paymentStatus === "EXPIRED" || bookingCanceled
-                      ? "Reservasi otomatis dibatalkan dan slot sudah dilepas karena deposit tidak dibayar paling lambat 1 jam sebelum jadwal reservasi."
+                      ? "Reservasi otomatis dibatalkan dan slot sudah dilepas karena deposit tidak dibayar sebelum batas waktu reservasi."
                       : "Pembayaran tidak dapat diproses. Silakan coba lagi dengan mengklik tombol Retry di bawah."}
                   </p>
                 </div>

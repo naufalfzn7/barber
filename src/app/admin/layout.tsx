@@ -66,22 +66,23 @@ function Sidebar({
 
   return (
     <aside
-      className={`h-full flex flex-col bg-linear-to-b from-slate-900 via-slate-800 to-slate-700 text-white transition-all duration-300 ${collapsed ? "w-0 overflow-hidden" : "w-64"}`}
+      className={`h-full flex flex-col border-r border-black/10 bg-[#111111] text-white shadow-2xl transition-all duration-300 ${collapsed ? "w-0 overflow-hidden" : "w-72"}`}
     >
-      <div className="px-6 py-6 border-b border-white/10">
+      <div className="border-b border-white/10 px-6 py-6">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs tracking-[0.25em] text-white/60 uppercase mb-0.5">
+            <p className="mb-0.5 text-[10px] uppercase tracking-[0.24em] text-white/45">
               Dashboard
             </p>
-            <h1 className="text-base font-bold tracking-widest uppercase">
+            <h1 className="text-lg font-bold uppercase tracking-[0.32em]">
               MONARCH
             </h1>
           </div>
           {onClose && (
             <button
               onClick={onClose}
-              className="text-white/40 hover:text-white lg:hidden"
+              className="border border-white/10 p-2 text-white/50 transition-colors hover:bg-white/10 hover:text-white lg:hidden"
+              aria-label="Tutup sidebar"
             >
               <svg
                 className="w-5 h-5"
@@ -99,16 +100,24 @@ function Sidebar({
             </button>
           )}
         </div>
-        <div className="mt-3 flex items-center gap-2">
+        <div className="mt-5 border border-white/10 bg-white/[0.04] px-3 py-3">
+          <p className="text-[10px] uppercase tracking-[0.2em] text-white/35">
+            Cabang aktif
+          </p>
+          <p className="mt-1 truncate text-sm font-semibold text-white">
+            {branchName}
+          </p>
+          <div className="mt-2 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-[11px] text-white/70 tracking-wide truncate">
-            {branchName} · {branchCode}
+          <span className="truncate text-[11px] tracking-wide text-white/60">
+            {branchCode}
           </span>
+          </div>
         </div>
       </div>
 
-      <nav className="flex-1 py-4 overflow-y-auto">
-        <ul className="space-y-0.5 px-3">
+      <nav className="flex-1 overflow-y-auto py-4">
+        <ul className="space-y-1 px-3">
           {navLinks.map((link) => {
             const isActive =
               pathname === link.href || pathname.startsWith(link.href + "/");
@@ -117,9 +126,9 @@ function Sidebar({
                 <Link
                   href={link.href}
                   onClick={onClose}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm tracking-wide transition-all ${isActive ? "bg-white text-black font-semibold" : "text-white/80 hover:text-white hover:bg-white/10"}`}
+                  className={`flex min-h-11 items-center gap-3 border-l-2 px-3 py-2.5 text-sm tracking-wide transition-all ${isActive ? "border-[#C9A66B] bg-white text-black font-semibold" : "border-transparent text-white/70 hover:border-white/30 hover:bg-white/10 hover:text-white"}`}
                 >
-                  <span className="w-2 h-2 rounded-full bg-current opacity-70" />
+                  <span className="h-2 w-2 bg-current opacity-70" />
                   {link.label}
                 </Link>
               </li>
@@ -128,9 +137,9 @@ function Sidebar({
         </ul>
       </nav>
 
-      <div className="px-6 py-5 border-t border-white/10">
+      <div className="border-t border-white/10 px-6 py-5">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">
+          <div className="flex h-9 w-9 items-center justify-center bg-white text-xs font-bold text-black">
             {userName
               .split(" ")
               .map((item) => item[0])
@@ -147,16 +156,16 @@ function Sidebar({
         </div>
         <button
           onClick={onChangePassword}
-          className="mt-3 w-full text-left text-[11px] text-white/60 hover:text-white tracking-widest uppercase transition-colors"
+          className="mt-4 w-full border border-white/10 px-3 py-2 text-left text-[11px] uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 hover:text-white"
         >
-          Ubah Password →
+          Ubah Password -&gt;
         </button>
         <button
           onClick={onLogout}
           disabled={isLoggingOut}
-          className="mt-2 w-full text-left text-[11px] text-white/60 hover:text-white tracking-widest uppercase transition-colors disabled:opacity-50"
+          className="mt-2 w-full border border-white/10 px-3 py-2 text-left text-[11px] uppercase tracking-widest text-white/60 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-50"
         >
-          {isLoggingOut ? "Keluar..." : "Keluar →"}
+          {isLoggingOut ? "Keluar..." : "Keluar ->"}
         </button>
       </div>
     </aside>
@@ -231,7 +240,7 @@ export default function AdminLayout({
   }, [pathname]);
 
   return (
-    <div className="flex h-screen bg-[#F5F5F3] overflow-hidden font-sans">
+    <div className="flex h-screen overflow-hidden bg-[#F5F5F3] font-sans">
       <div className="hidden lg:flex shrink-0">
         <Sidebar
           branchName={branchName}
@@ -248,7 +257,7 @@ export default function AdminLayout({
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-50 lg:hidden flex">
           <div
-            className="fixed inset-0 bg-black/50"
+            className="fixed inset-0 bg-black/55 backdrop-blur-sm"
             onClick={() => setMobileSidebarOpen(false)}
           />
           <div className="relative z-10 shrink-0">
@@ -268,11 +277,12 @@ export default function AdminLayout({
       )}
 
       <div className="flex-1 flex flex-col overflow-hidden">
-        <header className="shrink-0 h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-6">
+        <header className="flex h-16 shrink-0 items-center justify-between border-b border-black/10 bg-white/95 px-4 shadow-sm backdrop-blur lg:px-6">
           <div className="flex items-center gap-3">
             <button
-              className="lg:hidden p-1.5 rounded-md hover:bg-gray-100"
+              className="border border-black/10 p-2 transition-colors hover:bg-[#F4F1EC] lg:hidden"
               onClick={() => setMobileSidebarOpen(true)}
+              aria-label="Buka sidebar"
             >
               <svg
                 className="w-5 h-5"
@@ -304,7 +314,7 @@ export default function AdminLayout({
             <span className="text-xs text-gray-400 hidden md:block">
               {formatIndonesianDate(new Date())}
             </span>
-            <button className="relative p-1.5 rounded-md hover:bg-gray-100">
+            <button className="relative border border-black/10 p-2 transition-colors hover:bg-[#F4F1EC]">
               <svg
                 className="w-5 h-5 text-gray-500"
                 fill="none"

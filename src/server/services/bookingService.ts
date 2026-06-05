@@ -1,5 +1,12 @@
 import { DayOfWeek, type BookingStatus } from "@prisma/client";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
+import {
+  formatDepositDeadlineLabel,
+  getDepositPaymentDeadline,
+  getDepositPaymentDeadlineHours,
+  getExpiredPendingBookingCutoff,
+  isBeforeDepositPaymentDeadline,
+} from "@/server/services/depositSettings";
 
 const SLOT_STEP_MINUTES = 15;
 const BUSINESS_TIME_ZONE = "Asia/Jakarta";
@@ -154,6 +161,18 @@ function addDays(parts: DateParts, days: number): DateParts {
   };
 }
 
+function compareDateParts(a: DateParts, b: DateParts) {
+  if (a.year !== b.year) {
+    return a.year - b.year;
+  }
+
+  if (a.month !== b.month) {
+    return a.month - b.month;
+  }
+
+  return a.day - b.day;
+}
+
 function dayOfWeekFromDateParts(parts: DateParts): DayOfWeek {
   const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   const dayMap: DayOfWeek[] = [
@@ -206,15 +225,7 @@ function calculateTotalDue(input: {
   return toNumberDecimal(input.servicePrice) + productsTotal;
 }
 
-const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
 const PAYMENT_EXPIRY_REMINDER_MINUTES = 2;
-
-function getPendingExpiresAt(scheduledStart: Date) {
-  return new Date(
-    scheduledStart.getTime() -
-      DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
-  );
-}
 
 function parseHolidayTimeWindow(holiday: {
   isFullDay: boolean;
@@ -287,28 +298,23 @@ function scheduleAllowsSlot(input: {
 export const bookingService = {
   async runPaymentPendingMaintenance() {
     const now = new Date();
-    const cutoff = new Date(
-      now.getTime() + DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
-    );
+    const deadlineHours = await getDepositPaymentDeadlineHours();
+    const cutoff = getExpiredPendingBookingCutoff({ now, deadlineHours });
     const canceled = await bookingRepository.releaseExpiredPendingBookings({
       before: cutoff,
-      reason:
-        "Auto canceled because deposit was not paid 1 hour before reservation",
+      reason: `Auto canceled because deposit was not paid ${formatDepositDeadlineLabel(deadlineHours)} sebelum reservasi`,
     });
 
     await bookingRepository.notifyPendingBookingsExpiringSoon({
       windowStart: new Date(
         now.getTime() +
-          (DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES +
-            PAYMENT_EXPIRY_REMINDER_MINUTES) *
+          (deadlineHours * 60 + PAYMENT_EXPIRY_REMINDER_MINUTES) *
             60 *
             1000,
       ),
       windowEnd: new Date(
         now.getTime() +
-          (DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES +
-            PAYMENT_EXPIRY_REMINDER_MINUTES +
-            1) *
+          (deadlineHours * 60 + PAYMENT_EXPIRY_REMINDER_MINUTES + 1) *
             60 *
             1000,
       ),
@@ -456,7 +462,13 @@ export const bookingService = {
       end: string;
       availableBarberIds: string[];
       isAvailable: boolean;
+      unavailableReason?: string;
     }> = [];
+    const deadlineHours = await getDepositPaymentDeadlineHours();
+    const now = new Date();
+    const isPastDate =
+      compareDateParts(dayWindow.parts, getBusinessDateParts(now)) < 0;
+    const deadlineLabel = formatDepositDeadlineLabel(deadlineHours);
 
     for (
       let cursor = defaultOpenMinutes;
@@ -468,9 +480,15 @@ export const bookingService = {
         dayWindow.parts,
         cursor + serviceTotalMinutes,
       );
+      const canStillPayDeposit = isBeforeDepositPaymentDeadline({
+        scheduledStart: slotStart,
+        deadlineHours,
+        now,
+      });
 
       const availableBarberIds: string[] = [];
       const unavailableReasons: string[] = [];
+      const canAcceptBooking = !isPastDate && canStillPayDeposit;
 
       for (const barberman of barbermen) {
         const blockedByHoliday = holidays.some((holiday) =>
@@ -511,18 +529,30 @@ export const bookingService = {
             booking.scheduledEnd > slotStart,
         );
 
-        if (!overlaps) {
+        if (!overlaps && canAcceptBooking) {
           availableBarberIds.push(barberman.id);
         } else {
-          unavailableReasons.push(`${barberman.name} - Sudah dipesan`);
+          if (overlaps) {
+            unavailableReasons.push(`${barberman.name} - Sudah dipesan`);
+          }
         }
       }
+
+      const fallbackUnavailableReason = isPastDate
+        ? "Reservasi tidak tersedia untuk tanggal yang sudah lewat"
+        : `Batas pembayaran deposit ${deadlineLabel} sebelum reservasi sudah lewat`;
+      const unavailableReason =
+        unavailableReasons.find((reason) => reason.includes("Sudah dipesan")) ??
+        unavailableReasons[0] ??
+        fallbackUnavailableReason;
 
       slots.push({
         start: slotStart.toISOString(),
         end: slotEnd.toISOString(),
         availableBarberIds,
         isAvailable: availableBarberIds.length > 0,
+        unavailableReason:
+          availableBarberIds.length > 0 ? undefined : unavailableReason,
       });
     }
 
@@ -535,6 +565,27 @@ export const bookingService = {
     const scheduledStart = new Date(input.scheduledStart);
     if (Number.isNaN(scheduledStart.getTime())) {
       throw new Error("Invalid scheduledStart format");
+    }
+    if (
+      compareDateParts(
+        getBusinessDateParts(scheduledStart),
+        getBusinessDateParts(new Date()),
+      ) < 0
+    ) {
+      throw new Error(
+        "Reservasi tidak tersedia untuk tanggal yang sudah lewat. Pilih tanggal hari ini atau setelahnya.",
+      );
+    }
+    const deadlineHours = await getDepositPaymentDeadlineHours();
+    if (
+      !isBeforeDepositPaymentDeadline({
+        scheduledStart,
+        deadlineHours,
+      })
+    ) {
+      throw new Error(
+        `Batas pembayaran deposit sudah lewat. Pilih slot minimal ${formatDepositDeadlineLabel(deadlineHours)} dari sekarang.`,
+      );
     }
 
     const service = await bookingRepository.findServiceById(input.serviceId);
@@ -651,6 +702,7 @@ export const bookingService = {
     await bookingService.cleanupExpiredPaymentPendingBookings();
 
     const bookings = await bookingRepository.findMemberBookingHistory(memberId);
+    const deadlineHours = await getDepositPaymentDeadlineHours();
 
     return bookings.map((booking) => {
       const now = new Date();
@@ -680,7 +732,10 @@ export const bookingService = {
         pendingExpiresAt:
           booking.status === "PAYMENT_PENDING"
             ? (booking.payment?.qrisExpiresAt ??
-              getPendingExpiresAt(booking.scheduledStart))
+              getDepositPaymentDeadline({
+                scheduledStart: booking.scheduledStart,
+                deadlineHours,
+              }))
             : null,
         scheduledStart: booking.scheduledStart,
         scheduledEnd: booking.scheduledEnd,

@@ -6,16 +6,19 @@ import {
 import { prisma } from "@/server/db/prisma";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 import { env } from "@/server/core/env";
+import {
+  formatDepositDeadlineLabel,
+  getDepositPaymentDeadline,
+  getDepositPaymentDeadlineHours,
+  getExpiredPendingBookingCutoff,
+} from "@/server/services/depositSettings";
 
 // Validation regex for callback URL
 const XENDIT_CALLBACK_URL_REGEX =
   /^https?:\/\/(www\.)?[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,63}\b([-a-zA-Z0-9()@:%_+.~#?&\/=]*)$/;
 
 const DEFAULT_DEPOSIT_PERCENTAGE = 25;
-const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
 const MIN_XENDIT_INVOICE_DURATION_SECONDS = 60;
-const EXPIRED_DEPOSIT_CANCEL_REASON =
-  "Auto canceled because deposit was not paid 1 hour before reservation";
 
 function parseDepositPercentage(value: string | undefined): number {
   const parsed = Number(value);
@@ -52,7 +55,7 @@ async function createXenditInvoice(input: {
 
   if (invoiceDuration < MIN_XENDIT_INVOICE_DURATION_SECONDS) {
     throw new Error(
-      "Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat 1 jam sebelum jadwal reservasi.",
+      "Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan sebelum batas waktu reservasi.",
     );
   }
 
@@ -95,13 +98,6 @@ async function createXenditInvoice(input: {
     status: body.status ?? "PENDING",
     expiresAt: input.expiresAt.toISOString(),
   };
-}
-
-function getDepositPaymentDeadline(scheduledStart: Date) {
-  return new Date(
-    scheduledStart.getTime() -
-      DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
-  );
 }
 
 function hasUsableDepositInvoice(input: {
@@ -181,19 +177,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const paymentDeadline = getDepositPaymentDeadline(booking.scheduledStart);
+    const deadlineHours = await getDepositPaymentDeadlineHours();
+    const deadlineLabel = formatDepositDeadlineLabel(deadlineHours);
+    const expiredDepositCancelReason = `Auto canceled because deposit was not paid ${deadlineLabel} sebelum reservasi`;
+    const paymentDeadline = getDepositPaymentDeadline({
+      scheduledStart: booking.scheduledStart,
+      deadlineHours,
+    });
     if (paymentDeadline.getTime() <= Date.now()) {
       await bookingRepository.releaseExpiredPendingBookings({
-        before: new Date(
-          Date.now() + DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
-        ),
-        reason: EXPIRED_DEPOSIT_CANCEL_REASON,
+        before: getExpiredPendingBookingCutoff({
+          now: new Date(),
+          deadlineHours,
+        }),
+        reason: expiredDepositCancelReason,
       });
 
       return NextResponse.json(
         {
-          message:
-            "Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat 1 jam sebelum jadwal reservasi.",
+          message: `Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat ${deadlineLabel} sebelum jadwal reservasi.`,
         },
         { status: 400 },
       );

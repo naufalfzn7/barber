@@ -52,6 +52,11 @@ type DepositSettingResponse = {
   message?: string;
 };
 
+type DepositDeadlineSettingResponse = {
+  depositPaymentDeadlineHours: number;
+  message?: string;
+};
+
 const DAYS = [
   "MONDAY",
   "TUESDAY",
@@ -128,6 +133,9 @@ export default function PengaturanPage() {
   const [depositPercentage, setDepositPercentage] = useState(25);
   const [depositInput, setDepositInput] = useState("25");
   const [savingDeposit, setSavingDeposit] = useState(false);
+  const [depositDeadlineHours, setDepositDeadlineHours] = useState(1);
+  const [depositDeadlineInput, setDepositDeadlineInput] = useState("1");
+  const [savingDepositDeadline, setSavingDepositDeadline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -143,6 +151,9 @@ export default function PengaturanPage() {
   const depositPreviewAmount = Math.round(
     (depositPreviewBase * depositPercentage) / 100,
   );
+  const depositDeadlinePreviewReservationHour = 10;
+  const depositDeadlinePreviewPaymentHour =
+    (depositDeadlinePreviewReservationHour - depositDeadlineHours + 24) % 24;
 
   const loadBranches = useCallback(async () => {
     const response = await authFetch("/api/bookings/catalog");
@@ -205,6 +216,17 @@ export default function PengaturanPage() {
     setDepositInput(String(normalized));
   }, []);
 
+  const loadDepositDeadlineSetting = useCallback(async () => {
+    const response = await authFetch(
+      "/api/superadmin/settings/deposit-deadline",
+    );
+    const result = await readJson<DepositDeadlineSettingResponse>(response);
+    const nextHours = Number(result.depositPaymentDeadlineHours);
+    const normalized = Number.isFinite(nextHours) ? Math.trunc(nextHours) : 1;
+    setDepositDeadlineHours(normalized);
+    setDepositDeadlineInput(String(normalized));
+  }, []);
+
   const loadAll = useCallback(
     async (branchId: string) => {
       setLoading(true);
@@ -215,6 +237,7 @@ export default function PengaturanPage() {
           loadBarberSchedules(branchId),
           loadHolidays(branchId),
           loadDepositSetting(),
+          loadDepositDeadlineSetting(),
         ]);
       } catch (cause) {
         setError(
@@ -228,6 +251,7 @@ export default function PengaturanPage() {
     },
     [
       loadBarberSchedules,
+      loadDepositDeadlineSetting,
       loadDepositSetting,
       loadHolidays,
       loadOperatingHours,
@@ -455,6 +479,55 @@ export default function PengaturanPage() {
       );
     } finally {
       setSavingDeposit(false);
+    }
+  }
+
+  async function handleSaveDepositDeadlineSetting() {
+    const parsed = Number(depositDeadlineInput);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 168) {
+      setError("Batas waktu pembayaran harus angka 1-168 jam");
+      return;
+    }
+
+    const normalized = Math.trunc(parsed);
+    const confirmed = await confirmAction({
+      title: "Simpan batas waktu pembayaran?",
+      text: `Deposit harus dibayar paling lambat ${normalized} jam sebelum jadwal reservasi.`,
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingDepositDeadline(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await authFetch(
+        "/api/superadmin/settings/deposit-deadline",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ depositPaymentDeadlineHours: normalized }),
+        },
+      );
+      const result = await readJson<DepositDeadlineSettingResponse>(response);
+      const nextHours = Math.trunc(
+        Number(result.depositPaymentDeadlineHours),
+      );
+      setDepositDeadlineHours(nextHours);
+      setDepositDeadlineInput(String(nextHours));
+      setMessage("Batas waktu pembayaran deposit tersimpan.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Gagal menyimpan batas waktu pembayaran",
+      );
+    } finally {
+      setSavingDepositDeadline(false);
     }
   }
 
@@ -1035,6 +1108,88 @@ export default function PengaturanPage() {
                 <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
                   Contoh: 15% dari Rp 50.000 adalah Rp 7.500. Untuk deposit Rp
                   12.500, gunakan 25%.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-1 border-b border-gray-100 pb-4">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Batas Waktu Pembayaran Deposit
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Jumlah jam sebelum reservasi sebagai batas terakhir member
+                membayar deposit.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="space-y-3">
+                <label className="block text-xs text-gray-500">
+                  <span className="mb-1 block font-semibold text-gray-700">
+                    Batas Pembayaran
+                  </span>
+                  <div className="flex max-w-xs items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:ring-2 focus-within:ring-black">
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={depositDeadlineInput}
+                      onChange={(event) =>
+                        setDepositDeadlineInput(event.target.value)
+                      }
+                      className="w-full px-3 py-2 text-sm text-gray-900 focus:outline-none"
+                    />
+                    <span className="border-l border-gray-200 px-3 text-sm font-semibold text-gray-500">
+                      jam
+                    </span>
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSaveDepositDeadlineSetting}
+                  disabled={savingDepositDeadline}
+                  className="rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingDepositDeadline ? "Menyimpan..." : "Simpan Batas"}
+                </button>
+              </div>
+
+              <div className="rounded-lg bg-gray-50 p-4 text-xs text-gray-600">
+                <p className="font-semibold text-gray-900">Preview</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span>Jam reservasi</span>
+                    <span className="font-semibold text-gray-900">
+                      {String(depositDeadlinePreviewReservationHour).padStart(
+                        2,
+                        "0",
+                      )}
+                      :00
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Batas bayar</span>
+                    <span className="font-semibold text-gray-900">
+                      {String(depositDeadlinePreviewPaymentHour).padStart(
+                        2,
+                        "0",
+                      )}
+                      :00
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
+                    <span>Rule aktif</span>
+                    <span className="font-semibold text-gray-900">
+                      {depositDeadlineHours} jam sebelum reservasi
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+                  Contoh: reservasi pukul 10:00 dengan batas 2 jam harus
+                  dibayar paling lambat pukul 08:00.
                 </p>
               </div>
             </div>

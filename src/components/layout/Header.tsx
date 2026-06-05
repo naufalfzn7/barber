@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 import { navItems, rightNavItems, socialLinks } from "@/lib/data";
@@ -38,6 +37,24 @@ function getRoleDestination(role: AuthRole) {
   return "/reservasi";
 }
 
+function ChevronIcon({ open }: { open?: boolean }) {
+  return (
+    <svg
+      className={`h-3 w-3 transition-transform ${open ? "rotate-180" : ""}`}
+      viewBox="0 0 10 6"
+      fill="none"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M9.354.646a.5.5 0 00-.708 0L5 4.293 1.354.646a.5.5 0 00-.708.708l4 4a.5.5 0 00.708 0l4-4a.5.5 0 000-.708z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
+
 function AccountButton({
   session,
   onLogout,
@@ -52,43 +69,33 @@ function AccountButton({
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}
-        className="flex items-center gap-3 rounded-full border border-gray-200 bg-white px-3 py-2 text-left shadow-sm hover:border-black/20 hover:bg-gray-50 transition-colors"
+        className="flex items-center gap-3 border border-black/10 bg-white px-3 py-2 text-left shadow-sm transition-colors hover:border-black/30 hover:bg-[#F8F8F6]"
+        aria-expanded={open}
       >
-        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-black text-white text-[11px] font-bold tracking-[0.14em]">
+        <span className="flex h-9 w-9 items-center justify-center bg-black text-[11px] font-bold tracking-[0.14em] text-white">
           {getInitials(session.fullName)}
         </span>
         <span className="hidden xl:flex flex-col leading-tight">
-          <span className="text-[11px] uppercase tracking-[0.18em] text-gray-500">
+          <span className="text-[10px] uppercase tracking-[0.2em] text-gray-500">
             {getRoleLabel(session.role)}
           </span>
-          <span className="text-xs font-semibold text-gray-900 max-w-35 truncate">
+          <span className="max-w-35 truncate text-xs font-semibold text-gray-900">
             {session.fullName}
           </span>
         </span>
-        <svg
-          className={`w-3 h-3 text-gray-500 transition-transform ${open ? "rotate-180" : ""}`}
-          viewBox="0 0 10 6"
-          fill="none"
-        >
-          <path
-            fillRule="evenodd"
-            clipRule="evenodd"
-            d="M9.354.646a.5.5 0 00-.708 0L5 4.293 1.354.646a.5.5 0 00-.708.708l4 4a.5.5 0 00.708 0l4-4a.5.5 0 000-.708z"
-            fill="currentColor"
-          />
-        </svg>
+        <ChevronIcon open={open} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-72 rounded-2xl border border-gray-100 bg-white shadow-xl overflow-hidden z-50">
-          <div className="p-4 border-b border-gray-100">
+        <div className="absolute right-0 top-full z-50 mt-3 w-72 overflow-hidden border border-black/10 bg-white shadow-2xl">
+          <div className="border-b border-black/10 p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-gray-400">
               Login sebagai
             </p>
             <p className="mt-1 text-sm font-semibold text-gray-900">
               {session.fullName}
             </p>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="mt-1 text-xs text-gray-500">
               {getRoleLabel(session.role)}
             </p>
           </div>
@@ -96,7 +103,7 @@ function AccountButton({
           <div className="p-2">
             <Link
               href={getRoleDestination(session.role)}
-              className="block rounded-xl px-3 py-2 text-xs tracking-widest text-gray-700 hover:bg-gray-50 hover:text-black"
+              className="block px-3 py-2.5 text-xs tracking-widest text-gray-700 transition-colors hover:bg-[#F4F1EC] hover:text-black"
               onClick={() => setOpen(false)}
             >
               Buka Dashboard / Reservasi
@@ -104,7 +111,7 @@ function AccountButton({
             {session.role === "MEMBER" && (
               <Link
                 href="/profile"
-                className="block rounded-xl px-3 py-2 text-xs tracking-widest text-gray-700 hover:bg-gray-50 hover:text-black mt-1"
+                className="mt-1 block px-3 py-2.5 text-xs tracking-widest text-gray-700 transition-colors hover:bg-[#F4F1EC] hover:text-black"
                 onClick={() => setOpen(false)}
               >
                 Pengaturan Akun
@@ -116,7 +123,7 @@ function AccountButton({
                 setOpen(false);
                 void onLogout();
               }}
-              className="block w-full rounded-xl px-3 py-2 text-left text-xs tracking-widest text-red-600 hover:bg-red-50 mt-1"
+              className="mt-1 block w-full px-3 py-2.5 text-left text-xs tracking-widest text-red-600 transition-colors hover:bg-red-50"
             >
               Logout
             </button>
@@ -129,14 +136,14 @@ function AccountButton({
 
 function DropdownMenu({ items }: { items: NavItem[] }) {
   return (
-    <ul className="absolute top-full left-0 min-w-50 bg-white border border-gray-100 shadow-lg z-50 py-1">
+    <ul className="absolute left-0 top-full z-50 mt-3 min-w-56 border border-black/10 bg-white py-2 shadow-2xl">
       {items.map((item) => (
         <li key={item.label}>
           <Link
             href={item.href}
             target={item.external ? "_blank" : undefined}
             rel={item.external ? "noopener noreferrer" : undefined}
-            className="block px-4 py-2 text-xs tracking-widest text-gray-800 hover:bg-gray-50 transition-colors"
+            className="block px-4 py-2.5 text-xs tracking-widest text-gray-700 transition-colors hover:bg-[#F4F1EC] hover:text-black"
           >
             {item.label}
           </Link>
@@ -149,6 +156,14 @@ function DropdownMenu({ items }: { items: NavItem[] }) {
 function NavItemComponent({ item }: { item: NavItem }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLLIElement>(null);
+  const pathname = usePathname();
+  const childActive = item.children?.some((child) => child.href === pathname);
+  const isActive = item.href === pathname || childActive;
+  const navClass = `inline-flex h-10 items-center gap-2 border-b border-transparent text-[11px] font-semibold uppercase tracking-[0.18em] transition-colors ${
+    isActive
+      ? "border-black text-black"
+      : "text-gray-600 hover:border-black/40 hover:text-black"
+  }`;
 
   useEffect(() => {
     if (!open) return;
@@ -165,22 +180,13 @@ function NavItemComponent({ item }: { item: NavItem }) {
     return (
       <li className="relative" ref={ref}>
         <button
-          className="flex items-center gap-1 text-xs tracking-widest text-gray-800 hover:text-black py-2 font-medium"
+          type="button"
+          className={navClass}
           onClick={() => setOpen((prev) => !prev)}
+          aria-expanded={open}
         >
           {item.label}
-          <svg
-            className={`w-2.5 h-2.5 transition-transform ${open ? "rotate-180" : ""}`}
-            viewBox="0 0 10 6"
-            fill="none"
-          >
-            <path
-              fillRule="evenodd"
-              clipRule="evenodd"
-              d="M9.354.646a.5.5 0 00-.708 0L5 4.293 1.354.646a.5.5 0 00-.708.708l4 4a.5.5 0 00.708 0l4-4a.5.5 0 000-.708z"
-              fill="currentColor"
-            />
-          </svg>
+          <ChevronIcon open={open} />
         </button>
         {open && <DropdownMenu items={item.children} />}
       </li>
@@ -189,10 +195,7 @@ function NavItemComponent({ item }: { item: NavItem }) {
 
   return (
     <li>
-      <Link
-        href={item.href}
-        className="text-xs tracking-widest text-gray-800 hover:text-black py-2 font-medium"
-      >
+      <Link href={item.href} className={navClass}>
         {item.label}
       </Link>
     </li>
@@ -207,6 +210,11 @@ export default function Header() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const router = useRouter();
   const pathname = usePathname();
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setOpenDropdowns({});
+  }, [pathname]);
 
   useEffect(() => {
     let active = true;
@@ -232,9 +240,7 @@ export default function Header() {
           };
         };
 
-        if (!active) {
-          return;
-        }
+        if (!active) return;
 
         setSession(
           data.user?.role && data.user?.fullName
@@ -282,13 +288,12 @@ export default function Header() {
     : rightNavItems;
 
   return (
-    <header className="sticky top-0 z-50 bg-[#EBEBEB]">
-      <div className="max-w-374 mx-auto px-6 md:px-16 lg:px-24 xl:px-32">
-        <div className="flex items-center justify-between h-18 md:h-22">
-          {/* Left nav */}
-          <div className="hidden lg:flex items-center gap-8 flex-1">
-            <nav>
-              <ul className="flex items-center gap-8">
+    <header className="sticky top-0 z-50 border-b border-black/5 bg-[#EBEBEB]/95 shadow-sm backdrop-blur relative">
+      <div className="mx-auto max-w-[93.5rem] px-5 md:px-10 lg:px-16 xl:px-24">
+        <div className="flex h-18 items-center justify-between md:h-22">
+          <div className="hidden flex-1 items-center gap-8 lg:flex">
+            <nav aria-label="Navigasi utama">
+              <ul className="flex items-center gap-7">
                 {navItems.map((item) => (
                   <NavItemComponent key={item.label} item={item} />
                 ))}
@@ -296,31 +301,46 @@ export default function Header() {
             </nav>
           </div>
 
-          {/* Hamburger */}
           <button
-            className="lg:hidden p-2 -ml-2"
-            aria-label="Toggle menu"
-            onClick={() => setMobileOpen(!mobileOpen)}
+            className="inline-flex h-11 w-11 items-center justify-center border border-black/10 bg-white text-black shadow-sm transition-colors hover:bg-[#F4F1EC] lg:hidden"
+            aria-label={mobileOpen ? "Tutup menu" : "Buka menu"}
+            aria-expanded={mobileOpen}
+            onClick={() => setMobileOpen((prev) => !prev)}
+            type="button"
           >
-            {mobileOpen ? "✕" : "≡"}
+            {mobileOpen ? (
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M6 6l12 12M18 6L6 18"
+                  stroke="currentColor"
+                  strokeLinecap="square"
+                  strokeWidth="1.8"
+                />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M4 7h16M4 12h16M4 17h16"
+                  stroke="currentColor"
+                  strokeLinecap="square"
+                  strokeWidth="1.8"
+                />
+              </svg>
+            )}
           </button>
 
-          {/* Logo */}
-          <div className="shrink-0 flex justify-center">
-            <Link href="/">
-              <Image
-                src="/images/shared/logo.webp"
-                alt="Monarch Barber"
-                width={155}
-                height={29}
-                className="h-7 w-auto"
-              />
+          <div className="flex shrink-0 justify-center">
+            <Link
+              href="/"
+              className="text-base font-semibold uppercase tracking-[0.36em] text-black md:text-lg"
+              aria-label="Monarch homepage"
+            >
+              Monarch
             </Link>
           </div>
 
-          {/* Right nav */}
-          <div className="hidden lg:flex items-center gap-8 flex-1 justify-end">
-            <ul className="flex items-center gap-8">
+          <div className="hidden flex-1 items-center justify-end gap-8 lg:flex">
+            <ul className="flex items-center gap-7">
               {session ? (
                 <AccountButton session={session} onLogout={handleLogout} />
               ) : (
@@ -331,103 +351,108 @@ export default function Header() {
             </ul>
           </div>
 
-          <div className="lg:hidden w-9" />
+          <div className="w-11 lg:hidden" />
         </div>
       </div>
 
-      {/* MOBILE MENU */}
       {mobileOpen && (
-        <div className="lg:hidden bg-white border-t border-gray-100 shadow-lg">
-          <nav className="px-4 py-4">
-            {session && (
-              <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
-                <p className="text-[10px] tracking-[0.2em] uppercase text-gray-400">
-                  Login sebagai
-                </p>
-                <p className="mt-1 text-sm font-semibold text-gray-900">
-                  {session.fullName}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  {getRoleLabel(session.role)}
-                </p>
-              </div>
-            )}
+        <div className="absolute left-0 right-0 top-full z-[60] h-[calc(100vh-72px)] bg-black/35 backdrop-blur-sm md:h-[calc(100vh-88px)] lg:hidden">
+          <nav
+            className="mr-auto flex h-full w-full max-w-md flex-col overflow-y-auto border-r border-black/10 bg-white shadow-2xl"
+            aria-label="Menu mobile"
+          >
+            <div className="border-b border-black/10 px-5 py-5">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-gray-400">
+                Menu
+              </p>
+              <p className="mt-1 text-lg font-semibold uppercase tracking-[0.26em] text-black">
+                Monarch
+              </p>
+            </div>
 
-            <ul className="space-y-1">
-              {[...navItems, ...mobileActionItems].map((item) => (
-                <li key={item.label}>
-                  {"action" in item ? (
-                    <button
-                      className="block py-2 text-xs tracking-widest font-medium text-gray-800 hover:text-black"
-                      onClick={() => {
-                        if ("action" in item && item.action) {
-                          void item.action();
-                        }
-                        setMobileOpen(false);
-                      }}
-                    >
-                      {item.label}
-                    </button>
-                  ) : "children" in item && item.children ? (
-                    <>
-                      {/* ✅ Fixed: driven by data, not hardcoded index */}
+            <div className="flex-1 px-5 py-5">
+              {session && (
+                <div className="mb-5 border border-black/10 bg-[#F8F8F6] px-4 py-3">
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-gray-400">
+                    Login sebagai
+                  </p>
+                  <p className="mt-1 text-sm font-semibold text-gray-900">
+                    {session.fullName}
+                  </p>
+                  <p className="mt-1 text-xs text-gray-500">
+                    {getRoleLabel(session.role)}
+                  </p>
+                </div>
+              )}
+
+              <ul className="divide-y divide-black/10">
+                {[...navItems, ...mobileActionItems].map((item) => (
+                  <li key={item.label}>
+                    {"action" in item ? (
                       <button
-                        className="w-full text-left py-2 text-xs tracking-widest font-medium text-gray-800 hover:text-black flex items-center justify-between"
-                        onClick={() => toggleDropdown(item.label)}
+                        type="button"
+                        className="flex min-h-14 w-full items-center justify-between py-4 text-left text-[12px] font-semibold uppercase tracking-[0.18em] text-gray-800 transition-colors hover:text-black"
+                        onClick={() => {
+                          if ("action" in item && item.action) {
+                            void item.action();
+                          }
+                          setMobileOpen(false);
+                        }}
                       >
                         {item.label}
-                        <svg
-                          className={`w-2.5 h-2.5 transition-transform ${openDropdowns[item.label] ? "rotate-180" : ""}`}
-                          viewBox="0 0 10 6"
-                          fill="none"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            clipRule="evenodd"
-                            d="M9.354.646a.5.5 0 00-.708 0L5 4.293 1.354.646a.5.5 0 00-.708.708l4 4a.5.5 0 00.708 0l4-4a.5.5 0 000-.708z"
-                            fill="currentColor"
-                          />
-                        </svg>
+                        <span className="text-gray-400">/</span>
                       </button>
-                      {openDropdowns[item.label] && (
-                        <ul className="pl-4 mt-1 space-y-1 border-l border-gray-200">
-                          {item.children.map((child) => (
-                            <li key={child.label}>
-                              <Link
-                                href={child.href}
-                                className="block py-1.5 text-xs tracking-widest text-gray-600 hover:text-black"
-                                onClick={() => setMobileOpen(false)}
-                              >
-                                {child.label}
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </>
-                  ) : (
-                    <Link
-                      href={item.href}
-                      className="block py-2 text-xs tracking-widest font-medium text-gray-800 hover:text-black"
-                      onClick={() => setMobileOpen(false)}
-                    >
-                      {item.label}
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
+                    ) : "children" in item && item.children ? (
+                      <>
+                        <button
+                          type="button"
+                          className="flex min-h-14 w-full items-center justify-between py-4 text-left text-[12px] font-semibold uppercase tracking-[0.18em] text-gray-800 transition-colors hover:text-black"
+                          onClick={() => toggleDropdown(item.label)}
+                          aria-expanded={openDropdowns[item.label]}
+                        >
+                          {item.label}
+                          <ChevronIcon open={openDropdowns[item.label]} />
+                        </button>
+                        {openDropdowns[item.label] && (
+                          <ul className="mb-3 border-l border-black/20 pl-4">
+                            {item.children.map((child) => (
+                              <li key={child.label}>
+                                <Link
+                                  href={child.href}
+                                  className="block py-2.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500 transition-colors hover:text-black"
+                                  onClick={() => setMobileOpen(false)}
+                                >
+                                  {child.label}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </>
+                    ) : (
+                      <Link
+                        href={item.href}
+                        className="flex min-h-14 items-center justify-between py-4 text-[12px] font-semibold uppercase tracking-[0.18em] text-gray-800 transition-colors hover:text-black"
+                        onClick={() => setMobileOpen(false)}
+                      >
+                        {item.label}
+                        <span className="text-gray-400">/</span>
+                      </Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
 
-            {/* Social links */}
-            <div className="mt-6 pt-4 border-t border-gray-100">
-              <ul className="flex gap-4 flex-wrap">
+            <div className="border-t border-black/10 px-5 py-5">
+              <ul className="grid grid-cols-2 gap-2">
                 {socialLinks.map((s) => (
                   <li key={s.label}>
                     <a
                       href={s.href}
                       target={s.href.startsWith("http") ? "_blank" : undefined}
                       rel="noopener noreferrer"
-                      className="text-xs tracking-widest text-gray-500 hover:text-black"
+                      className="flex min-h-11 items-center justify-center border border-black/10 px-3 text-center text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-600 transition-colors hover:border-black hover:text-black"
                     >
                       {s.label}
                     </a>

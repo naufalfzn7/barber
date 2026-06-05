@@ -7,6 +7,11 @@ import {
 } from "@prisma/client";
 import { env } from "@/server/core/env";
 import { paymentRepository } from "@/server/repositories/paymentRepository";
+import {
+  formatDepositDeadlineLabel,
+  getDepositPaymentDeadline,
+  getDepositPaymentDeadlineHours,
+} from "@/server/services/depositSettings";
 
 type Actor = {
   userId: string;
@@ -86,15 +91,7 @@ function normalizeXenditStatus(
   return null;
 }
 
-const DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES = 60;
 const MIN_XENDIT_INVOICE_DURATION_SECONDS = 60;
-
-function getDepositPaymentDeadline(scheduledStart: Date) {
-  return new Date(
-    scheduledStart.getTime() -
-      DEPOSIT_PAYMENT_DEADLINE_OFFSET_MINUTES * 60 * 1000,
-  );
-}
 
 async function createXenditInvoice(input: {
   externalRef: string;
@@ -419,8 +416,14 @@ export const paymentService = {
 
     const externalRef = generateExternalRef(payment.booking.code);
     const amountDue = toNumberDecimal(payment.amountDue);
+    const deadlineHours = payment.isDeposit
+      ? await getDepositPaymentDeadlineHours()
+      : null;
     const expiresAt = payment.isDeposit
-      ? getDepositPaymentDeadline(payment.booking.scheduledStart)
+      ? getDepositPaymentDeadline({
+          scheduledStart: payment.booking.scheduledStart,
+          deadlineHours: deadlineHours ?? 1,
+        })
       : undefined;
 
     if (
@@ -429,7 +432,7 @@ export const paymentService = {
         MIN_XENDIT_INVOICE_DURATION_SECONDS * 1000
     ) {
       throw new Error(
-        "Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat 1 jam sebelum jadwal reservasi.",
+        `Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat ${formatDepositDeadlineLabel(deadlineHours ?? 1)} sebelum jadwal reservasi.`,
       );
     }
 
