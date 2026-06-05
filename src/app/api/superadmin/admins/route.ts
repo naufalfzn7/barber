@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
       phoneNumber: body.phoneNumber,
       branchId: body.branchId,
       jobTitle: body.jobTitle,
+      actorId: auth.sub,
     });
 
     return NextResponse.json(

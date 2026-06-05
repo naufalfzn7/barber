@@ -57,6 +57,7 @@ export async function GET(request: NextRequest) {
         mustChangePassword: member.mustChangePassword,
         isActive: member.isActive,
         memberProfile: member.memberProfile,
+        generatedPassword: member.generatedPassword,
         createdAt: member.createdAt,
       })),
     },
@@ -95,6 +96,7 @@ export async function POST(request: NextRequest) {
       email: body.email,
       phoneNumber: body.phoneNumber,
       branchId: scope.branchId,
+      actorId: auth.sub,
     });
 
     return NextResponse.json(

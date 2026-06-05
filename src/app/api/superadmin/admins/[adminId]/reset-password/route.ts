@@ -13,7 +13,10 @@ export async function POST(
 
   try {
     const { adminId } = await context.params;
-    const result = await superadminService.resetAdminPassword(adminId);
+    const result = await superadminService.resetAdminPassword(
+      adminId,
+      auth.sub,
+    );
 
     return NextResponse.json(
       {

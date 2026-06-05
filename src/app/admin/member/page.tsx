@@ -24,6 +24,11 @@ type MemberItem = {
   mustChangePassword: boolean;
   isActive: boolean;
   createdAt: string;
+  generatedPassword?: {
+    password: string;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
 };
 
 export default function MemberPage() {
@@ -229,6 +234,94 @@ export default function MemberPage() {
     }
   }
 
+  async function copyPassword(password?: string | null) {
+    if (!password) {
+      setError("Password belum tersimpan");
+      return;
+    }
+
+    await navigator.clipboard.writeText(password);
+    setMessage("Password disalin");
+  }
+
+  async function updatePassword(member: MemberItem) {
+    const password = window.prompt(
+      `Password baru untuk ${member.fullName}`,
+      member.generatedPassword?.password ?? "",
+    );
+    if (password === null) {
+      return;
+    }
+
+    if (password.trim().length < 6) {
+      setError("Password minimal 6 karakter");
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(`/api/members/${member.id}/password`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          password: password.trim(),
+          branchId: role === "SUPER_ADMIN" ? branchId : undefined,
+        }),
+      });
+      const json = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal update password member");
+      }
+
+      setMessage("Password member diperbarui");
+      await loadMembers();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal update password member",
+      );
+    }
+  }
+
+  async function deletePassword(member: MemberItem) {
+    const confirmed = await confirmAction({
+      title: "Hapus password tersimpan?",
+      text: `Password yang tampil untuk ${member.fullName} akan dihapus dari catatan. Password login saat ini tidak berubah.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(`/api/members/${member.id}/password`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId: role === "SUPER_ADMIN" ? branchId : undefined,
+        }),
+      });
+      const json = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal hapus password tersimpan");
+      }
+
+      setMessage("Password tersimpan dihapus");
+      await loadMembers();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal hapus password tersimpan",
+      );
+    }
+  }
+
   const filteredMembers = useMemo(
     () =>
       members.filter((member) => {
@@ -312,6 +405,9 @@ export default function MemberPage() {
               <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
                 Status
               </th>
+              <th className="text-left px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
+                Password
+              </th>
               <th className="text-right px-4 py-3 text-xs uppercase tracking-wide text-gray-500">
                 Aksi
               </th>
@@ -321,7 +417,7 @@ export default function MemberPage() {
             {loading && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-sm text-gray-500"
                 >
                   Loading...
@@ -332,7 +428,7 @@ export default function MemberPage() {
             {!loading && filteredMembers.length === 0 && (
               <tr>
                 <td
-                  colSpan={6}
+                  colSpan={7}
                   className="px-4 py-8 text-center text-sm text-gray-500"
                 >
                   Tidak ada member
@@ -362,14 +458,46 @@ export default function MemberPage() {
                     {member.isActive ? "Aktif" : "Nonaktif"}
                     {member.mustChangePassword ? " · Wajib ganti password" : ""}
                   </td>
+                  <td className="px-4 py-3 text-xs text-gray-700">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono max-w-36 truncate">
+                        {member.generatedPassword?.password ?? "-"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          copyPassword(member.generatedPassword?.password)
+                        }
+                        className="px-2 py-1 text-[11px] rounded-md border border-gray-300 text-gray-700 font-semibold"
+                      >
+                        Copy
+                      </button>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() => resetPassword(member.id)}
-                      className="px-2.5 py-1.5 text-[11px] rounded-md border border-gray-300 text-gray-700 font-semibold"
-                    >
-                      Reset Password
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => updatePassword(member)}
+                        className="px-2.5 py-1.5 text-[11px] rounded-md border border-gray-300 text-gray-700 font-semibold"
+                      >
+                        Ubah
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => deletePassword(member)}
+                        className="px-2.5 py-1.5 text-[11px] rounded-md border border-red-100 bg-red-50 text-red-600 font-semibold"
+                      >
+                        Hapus
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => resetPassword(member.id)}
+                        className="px-2.5 py-1.5 text-[11px] rounded-md border border-gray-900 bg-gray-900 text-white font-semibold"
+                      >
+                        Reset
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

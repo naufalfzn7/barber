@@ -19,6 +19,9 @@ export const userRepository = {
         memberProfile: {
           select: { memberCode: true, defaultBranchId: true, joinedAt: true },
         },
+        generatedPassword: {
+          select: { password: true, createdAt: true, updatedAt: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -37,6 +40,9 @@ export const userRepository = {
         branch: {
           select: { id: true, code: true, name: true, timezone: true },
         },
+        generatedPassword: {
+          select: { password: true, createdAt: true, updatedAt: true },
+        },
       },
       orderBy: { createdAt: "desc" },
     });
@@ -54,6 +60,9 @@ export const userRepository = {
         },
         branch: {
           select: { id: true, code: true, name: true, timezone: true },
+        },
+        generatedPassword: {
+          select: { password: true, createdAt: true, updatedAt: true },
         },
       },
     });
@@ -168,6 +177,32 @@ export const userRepository = {
     return prisma.user.update({
       where: { id: userId },
       data: { passwordHash, mustChangePassword },
+    });
+  },
+
+  saveGeneratedPassword(input: {
+    userId: string;
+    password: string;
+    actorId?: string;
+  }) {
+    return prisma.generatedPassword.upsert({
+      where: { userId: input.userId },
+      create: {
+        userId: input.userId,
+        password: input.password,
+        createdById: input.actorId,
+        updatedById: input.actorId,
+      },
+      update: {
+        password: input.password,
+        updatedById: input.actorId,
+      },
+    });
+  },
+
+  deleteGeneratedPassword(userId: string) {
+    return prisma.generatedPassword.deleteMany({
+      where: { userId },
     });
   },
 

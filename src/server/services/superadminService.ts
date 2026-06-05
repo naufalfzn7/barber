@@ -413,6 +413,7 @@ export const superadminService = {
       mustChangePassword: admin.mustChangePassword,
       createdAt: admin.createdAt,
       updatedAt: admin.updatedAt,
+      generatedPassword: admin.generatedPassword,
       branchId: admin.branchId,
       branchName: admin.branch?.name ?? "-",
       branchCode: admin.branch?.code ?? "-",
@@ -427,6 +428,7 @@ export const superadminService = {
     phoneNumber?: string;
     branchId: string;
     jobTitle?: string;
+    actorId?: string;
   }) {
     const exists = await userRepository.findByEmail(input.email.toLowerCase());
     if (exists) {
@@ -443,6 +445,11 @@ export const superadminService = {
       passwordHash,
       branchId: input.branchId,
       jobTitle: input.jobTitle,
+    });
+    await userRepository.saveGeneratedPassword({
+      userId: user.id,
+      password: temporaryPassword,
+      actorId: input.actorId,
     });
 
     return {
@@ -478,7 +485,7 @@ export const superadminService = {
     return updated;
   },
 
-  async resetAdminPassword(adminId: string) {
+  async resetAdminPassword(adminId: string, actorId?: string) {
     const admin = await userRepository.findAdminById(adminId);
     if (!admin) {
       throw new Error("Admin not found");
@@ -487,8 +494,48 @@ export const superadminService = {
     const temporaryPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(temporaryPassword, 10);
     await userRepository.updatePassword(admin.id, passwordHash, true);
+    await userRepository.saveGeneratedPassword({
+      userId: admin.id,
+      password: temporaryPassword,
+      actorId,
+    });
 
     return { temporaryPassword };
+  },
+
+  async updateAdminGeneratedPassword(input: {
+    adminId: string;
+    password: string;
+    actorId?: string;
+  }) {
+    const admin = await userRepository.findAdminById(input.adminId);
+    if (!admin) {
+      throw new Error("Admin not found");
+    }
+
+    if (input.password.length < 6) {
+      throw new Error("Password minimal 6 karakter");
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, 10);
+    await userRepository.updatePassword(admin.id, passwordHash, true);
+    await userRepository.saveGeneratedPassword({
+      userId: admin.id,
+      password: input.password,
+      actorId: input.actorId,
+    });
+
+    return { temporaryPassword: input.password };
+  },
+
+  async deleteAdminGeneratedPassword(adminId: string) {
+    const admin = await userRepository.findAdminById(adminId);
+    if (!admin) {
+      throw new Error("Admin not found");
+    }
+
+    await userRepository.deleteGeneratedPassword(admin.id);
+    return { message: "Generated password deleted" };
   },
 
   async barbermen(branchId?: string) {

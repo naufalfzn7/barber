@@ -31,7 +31,56 @@ function resolveBranchId(
   return { branchId: requestedBranchId ?? undefined };
 }
 
-export async function POST(
+export async function PATCH(
+  request: NextRequest,
+  context: { params: Promise<{ memberId: string }> },
+) {
+  const auth = requireRole(request, ["ADMIN", "SUPER_ADMIN"]);
+  if (auth instanceof NextResponse) {
+    return auth;
+  }
+
+  try {
+    const { memberId } = await context.params;
+    const body = (await request.json()) as {
+      password?: string;
+      branchId?: string;
+    };
+
+    if (!body.password) {
+      return NextResponse.json(
+        { message: "password is required" },
+        { status: 400 },
+      );
+    }
+
+    const scope = resolveBranchId(auth, body.branchId ?? null);
+    if (scope.error) {
+      return scope.error;
+    }
+
+    const result = await authService.updateMemberGeneratedPassword({
+      memberId,
+      password: body.password,
+      branchId: scope.branchId,
+      actorId: auth.sub,
+    });
+
+    return NextResponse.json(
+      {
+        message: "Password updated",
+        temporaryPassword: result.temporaryPassword,
+      },
+      { status: 200 },
+    );
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to update password";
+    return NextResponse.json({ message }, { status: 400 });
+  }
+}
+
+export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ memberId: string }> },
 ) {
@@ -51,22 +100,15 @@ export async function POST(
       return scope.error;
     }
 
-    const result = await authService.resetPasswordByAdmin(
+    const result = await authService.deleteMemberGeneratedPassword(
       memberId,
       scope.branchId,
-      auth.sub,
     );
 
-    return NextResponse.json(
-      {
-        message: "Password reset successful",
-        temporaryPassword: result.temporaryPassword,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json(result, { status: 200 });
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : "Failed to reset password";
+      error instanceof Error ? error.message : "Failed to delete password";
     return NextResponse.json({ message }, { status: 400 });
   }
 }

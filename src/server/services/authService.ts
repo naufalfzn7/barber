@@ -77,6 +77,7 @@ export const authService = {
     email: string;
     phoneNumber?: string;
     branchId?: string;
+    actorId?: string;
   }) {
     const exists = await userRepository.findByEmail(input.email.toLowerCase());
     if (exists) {
@@ -94,6 +95,11 @@ export const authService = {
       passwordHash,
       memberCode: generateMemberCode(),
     });
+    await userRepository.saveGeneratedPassword({
+      userId: user.id,
+      password: tempPassword,
+      actorId: input.actorId,
+    });
 
     return { user, temporaryPassword: tempPassword };
   },
@@ -102,7 +108,11 @@ export const authService = {
     return userRepository.findMembers(branchId);
   },
 
-  async resetPasswordByAdmin(memberId: string, branchId?: string) {
+  async resetPasswordByAdmin(
+    memberId: string,
+    branchId?: string,
+    actorId?: string,
+  ) {
     const user = await userRepository.findMemberById(memberId, branchId);
     if (!user) {
       throw new Error("Member not found");
@@ -111,8 +121,52 @@ export const authService = {
     const tempPassword = generateTemporaryPassword();
     const passwordHash = await bcrypt.hash(tempPassword, 10);
     await userRepository.updatePassword(user.id, passwordHash, true);
+    await userRepository.saveGeneratedPassword({
+      userId: user.id,
+      password: tempPassword,
+      actorId,
+    });
 
     return { temporaryPassword: tempPassword };
+  },
+
+  async updateMemberGeneratedPassword(input: {
+    memberId: string;
+    password: string;
+    branchId?: string;
+    actorId?: string;
+  }) {
+    const user = await userRepository.findMemberById(
+      input.memberId,
+      input.branchId,
+    );
+    if (!user) {
+      throw new Error("Member not found");
+    }
+
+    if (input.password.length < 6) {
+      throw new Error("Password minimal 6 karakter");
+    }
+
+    const passwordHash = await bcrypt.hash(input.password, 10);
+    await userRepository.updatePassword(user.id, passwordHash, true);
+    await userRepository.saveGeneratedPassword({
+      userId: user.id,
+      password: input.password,
+      actorId: input.actorId,
+    });
+
+    return { temporaryPassword: input.password };
+  },
+
+  async deleteMemberGeneratedPassword(memberId: string, branchId?: string) {
+    const user = await userRepository.findMemberById(memberId, branchId);
+    if (!user) {
+      throw new Error("Member not found");
+    }
+
+    await userRepository.deleteGeneratedPassword(user.id);
+    return { message: "Generated password deleted" };
   },
 
   async registerMember(input: {

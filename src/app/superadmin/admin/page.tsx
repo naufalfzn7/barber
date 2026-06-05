@@ -29,6 +29,11 @@ type AdminItem = {
   branchCode: string;
   timezone: string;
   jobTitle: string | null;
+  generatedPassword?: {
+    password: string;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
 };
 
 type AdminResponse = AdminItem[];
@@ -254,6 +259,130 @@ export default function AdminPage() {
     }
   }
 
+  async function copyPassword(password?: string | null) {
+    if (!password) {
+      setError("Password belum tersimpan");
+      return;
+    }
+
+    await navigator.clipboard.writeText(password);
+    setMessage("Password disalin");
+  }
+
+  async function resetPassword(admin: AdminItem) {
+    const confirmed = await confirmAction({
+      title: "Reset password admin?",
+      text: `Password ${admin.fullName} akan diganti dan disimpan permanen.`,
+      confirmButtonText: "Ya, reset",
+      icon: "warning",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(
+        `/api/superadmin/admins/${admin.id}/reset-password`,
+        { method: "POST" },
+      );
+      const json = (await response.json()) as {
+        message?: string;
+        result?: { temporaryPassword?: string };
+      };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal reset password admin");
+      }
+
+      setMessage(
+        `${json.message ?? "Password admin direset"}. Password baru: ${json.result?.temporaryPassword ?? "-"}`,
+      );
+      await loadData();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal reset password admin",
+      );
+    }
+  }
+
+  async function updatePassword(admin: AdminItem) {
+    const password = window.prompt(
+      `Password baru untuk ${admin.fullName}`,
+      admin.generatedPassword?.password ?? "",
+    );
+    if (password === null) {
+      return;
+    }
+
+    if (password.trim().length < 6) {
+      setError("Password minimal 6 karakter");
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(
+        `/api/superadmin/admins/${admin.id}/password`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: password.trim() }),
+        },
+      );
+      const json = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal update password admin");
+      }
+
+      setMessage("Password admin diperbarui");
+      await loadData();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal update password admin",
+      );
+    }
+  }
+
+  async function deletePassword(admin: AdminItem) {
+    const confirmed = await confirmAction({
+      title: "Hapus password tersimpan?",
+      text: `Password yang tampil untuk ${admin.fullName} akan dihapus dari catatan. Password login saat ini tidak berubah.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(
+        `/api/superadmin/admins/${admin.id}/password`,
+        { method: "DELETE" },
+      );
+      const json = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal hapus password tersimpan");
+      }
+
+      setMessage("Password tersimpan dihapus");
+      await loadData();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal hapus password tersimpan",
+      );
+    }
+  }
+
   async function deleteAdmin(adminId: string) {
     const admin = admins.find((item) => item.id === adminId);
     const confirmed = await confirmAction({
@@ -398,6 +527,47 @@ export default function AdminPage() {
                 <p className="text-[10px] font-semibold text-gray-700">
                   {formatIndonesianDateTime(admin.updatedAt)}
                 </p>
+              </div>
+            </div>
+
+            <div className="mb-4 rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">
+                    Password Tersimpan
+                  </p>
+                  <p className="font-mono text-xs font-semibold text-gray-900 truncate">
+                    {admin.generatedPassword?.password ?? "-"}
+                  </p>
+                </div>
+                <button
+                  onClick={() =>
+                    copyPassword(admin.generatedPassword?.password)
+                  }
+                  className="text-[11px] px-2 py-1 rounded-md border border-gray-200 bg-white text-gray-700"
+                >
+                  Copy
+                </button>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <button
+                  onClick={() => updatePassword(admin)}
+                  className="text-[11px] px-2 py-1.5 rounded-md border border-gray-200 bg-white text-gray-700"
+                >
+                  Ubah
+                </button>
+                <button
+                  onClick={() => deletePassword(admin)}
+                  className="text-[11px] px-2 py-1.5 rounded-md border border-red-100 bg-red-50 text-red-600"
+                >
+                  Hapus
+                </button>
+                <button
+                  onClick={() => resetPassword(admin)}
+                  className="text-[11px] px-2 py-1.5 rounded-md border border-gray-900 bg-gray-900 text-white"
+                >
+                  Reset
+                </button>
               </div>
             </div>
 
