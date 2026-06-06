@@ -2,6 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { bookingService } from "@/server/services/bookingService";
 import { revalidateBookingData } from "@/server/core/revalidate";
+import {
+  getPendingBookingHoldExpiresAt,
+  PENDING_BOOKING_HOLD_MINUTES,
+} from "@/server/services/bookingHold";
 
 export async function POST(request: NextRequest) {
   const auth = requireRole(request, ["MEMBER"]);
@@ -37,8 +41,13 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        message: "Booking confirmed",
-        booking,
+        message: `Booking held for ${PENDING_BOOKING_HOLD_MINUTES} minutes`,
+        booking: {
+          ...booking,
+          holdExpiresAt: getPendingBookingHoldExpiresAt(
+            booking.createdAt,
+          ).toISOString(),
+        },
       },
       { status: 201 },
     );

@@ -7,6 +7,12 @@ import { prisma } from "@/server/db/prisma";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 import { env } from "@/server/core/env";
 import {
+  getEarlierDeadline,
+  getPendingBookingHoldCutoff,
+  getPendingBookingHoldExpiresAt,
+  PENDING_BOOKING_HOLD_MINUTES,
+} from "@/server/services/bookingHold";
+import {
   formatDepositDeadlineLabel,
   getDepositPaymentDeadline,
   getDepositPaymentDeadlineHours,
@@ -180,22 +186,35 @@ export async function POST(request: NextRequest) {
     const deadlineHours = await getDepositPaymentDeadlineHours();
     const deadlineLabel = formatDepositDeadlineLabel(deadlineHours);
     const expiredDepositCancelReason = `Auto canceled because deposit was not paid ${deadlineLabel} sebelum reservasi`;
-    const paymentDeadline = getDepositPaymentDeadline({
+    const scheduledPaymentDeadline = getDepositPaymentDeadline({
       scheduledStart: booking.scheduledStart,
       deadlineHours,
     });
+    const holdDeadline = getPendingBookingHoldExpiresAt(booking.createdAt);
+    const paymentDeadline = getEarlierDeadline(
+      scheduledPaymentDeadline,
+      holdDeadline,
+    );
     if (paymentDeadline.getTime() <= Date.now()) {
+      const now = new Date();
       await bookingRepository.releaseExpiredPendingBookings({
-        before: getExpiredPendingBookingCutoff({
-          now: new Date(),
+        scheduledStartBefore: getExpiredPendingBookingCutoff({
+          now,
           deadlineHours,
         }),
-        reason: expiredDepositCancelReason,
+        createdAtBefore: getPendingBookingHoldCutoff(now),
+        reason:
+          holdDeadline.getTime() <= now.getTime()
+            ? `Auto canceled because deposit was not paid within ${PENDING_BOOKING_HOLD_MINUTES} minutes`
+            : expiredDepositCancelReason,
       });
 
       return NextResponse.json(
         {
-          message: `Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat ${deadlineLabel} sebelum jadwal reservasi.`,
+          message:
+            holdDeadline.getTime() <= now.getTime()
+              ? `Batas pembayaran deposit sudah lewat. Selesaikan pembayaran maksimal ${PENDING_BOOKING_HOLD_MINUTES} menit setelah reservasi dibuat.`
+              : `Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat ${deadlineLabel} sebelum jadwal reservasi.`,
         },
         { status: 400 },
       );

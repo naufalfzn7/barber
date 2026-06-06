@@ -6,12 +6,27 @@ import {
   PaymentStatus,
 } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
+import {
+  getPendingBookingHoldCutoff,
+  PENDING_BOOKING_HOLD_MINUTES,
+} from "@/server/services/bookingHold";
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
   BookingStatus.UPCOMING,
   BookingStatus.IN_PROGRESS,
-  BookingStatus.PAYMENT_PENDING,
 ];
+
+function activeBookingWhere(now = new Date()): Prisma.BookingWhereInput {
+  return {
+    OR: [
+      { status: { in: ACTIVE_BOOKING_STATUSES } },
+      {
+        status: BookingStatus.PAYMENT_PENDING,
+        createdAt: { gt: getPendingBookingHoldCutoff(now) },
+      },
+    ],
+  };
+}
 
 export const bookingRepository = {
   listActiveBranches() {
@@ -108,11 +123,12 @@ export const bookingRepository = {
     scheduledStart: Date;
     scheduledEnd: Date;
   }) {
+    const now = new Date();
     return prisma.booking.findMany({
       where: {
         branchId: input.branchId,
         barbermanId: input.barbermanId,
-        status: { in: ACTIVE_BOOKING_STATUSES },
+        ...activeBookingWhere(now),
         scheduledStart: { lt: input.scheduledEnd },
         scheduledEnd: { gt: input.scheduledStart },
       },
@@ -126,10 +142,11 @@ export const bookingRepository = {
     dateEnd: Date;
     barbermanId?: string;
   }) {
+    const now = new Date();
     return prisma.booking.findMany({
       where: {
         branchId: input.branchId,
-        status: { in: ACTIVE_BOOKING_STATUSES },
+        ...activeBookingWhere(now),
         scheduledStart: { lt: input.dateEnd },
         scheduledEnd: { gt: input.dateStart },
         ...(input.barbermanId ? { barbermanId: input.barbermanId } : {}),
@@ -161,7 +178,7 @@ export const bookingRepository = {
           where: {
             branchId: input.branchId,
             barbermanId: input.barbermanId,
-            status: { in: ACTIVE_BOOKING_STATUSES },
+            ...activeBookingWhere(),
             scheduledStart: { lt: input.scheduledEnd },
             scheduledEnd: { gt: input.scheduledStart },
           },
@@ -617,25 +634,38 @@ export const bookingRepository = {
     });
   },
 
-  releaseExpiredPendingBookings(input: { before: Date; reason?: string }) {
+  releaseExpiredPendingBookings(input: {
+    scheduledStartBefore: Date;
+    createdAtBefore: Date;
+    reason?: string;
+  }) {
     return prisma.$transaction(
       async (tx) => {
         const stale = await tx.booking.findMany({
           where: {
             status: BookingStatus.PAYMENT_PENDING,
-            scheduledStart: { lte: input.before },
-            OR: [
-              { payment: null },
+            AND: [
               {
-                payment: {
-                  status: {
-                    in: [
-                      PaymentStatus.PENDING,
-                      PaymentStatus.FAILED,
-                      PaymentStatus.EXPIRED,
-                    ],
+                OR: [
+                  { scheduledStart: { lte: input.scheduledStartBefore } },
+                  { createdAt: { lte: input.createdAtBefore } },
+                ],
+              },
+              {
+                OR: [
+                  { payment: null },
+                  {
+                    payment: {
+                      status: {
+                        in: [
+                          PaymentStatus.PENDING,
+                          PaymentStatus.FAILED,
+                          PaymentStatus.EXPIRED,
+                        ],
+                      },
+                    },
                   },
-                },
+                ],
               },
             ],
           },
@@ -705,9 +735,15 @@ export const bookingRepository = {
       const candidates = await tx.booking.findMany({
         where: {
           status: BookingStatus.PAYMENT_PENDING,
-          scheduledStart: {
-            gte: input.windowStart,
-            lt: input.windowEnd,
+          createdAt: {
+            gte: new Date(
+              input.windowStart.getTime() -
+                PENDING_BOOKING_HOLD_MINUTES * 60 * 1000,
+            ),
+            lt: new Date(
+              input.windowEnd.getTime() -
+                PENDING_BOOKING_HOLD_MINUTES * 60 * 1000,
+            ),
           },
           memberId: { not: null },
           OR: [

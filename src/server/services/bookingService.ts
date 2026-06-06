@@ -1,6 +1,12 @@
 import { DayOfWeek, type BookingStatus } from "@prisma/client";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 import {
+  getEarlierDeadline,
+  getPendingBookingHoldCutoff,
+  getPendingBookingHoldExpiresAt,
+  PENDING_BOOKING_HOLD_MINUTES,
+} from "@/server/services/bookingHold";
+import {
   formatDepositDeadlineLabel,
   getDepositPaymentDeadline,
   getDepositPaymentDeadlineHours,
@@ -301,22 +307,18 @@ export const bookingService = {
     const deadlineHours = await getDepositPaymentDeadlineHours();
     const cutoff = getExpiredPendingBookingCutoff({ now, deadlineHours });
     const canceled = await bookingRepository.releaseExpiredPendingBookings({
-      before: cutoff,
-      reason: `Auto canceled because deposit was not paid ${formatDepositDeadlineLabel(deadlineHours)} sebelum reservasi`,
+      scheduledStartBefore: cutoff,
+      createdAtBefore: getPendingBookingHoldCutoff(now),
+      reason: `Auto canceled because deposit was not paid within ${PENDING_BOOKING_HOLD_MINUTES} minutes`,
     });
 
     await bookingRepository.notifyPendingBookingsExpiringSoon({
       windowStart: new Date(
-        now.getTime() +
-          (deadlineHours * 60 + PAYMENT_EXPIRY_REMINDER_MINUTES) *
-            60 *
-            1000,
+        now.getTime() + PAYMENT_EXPIRY_REMINDER_MINUTES * 60 * 1000,
       ),
       windowEnd: new Date(
         now.getTime() +
-          (deadlineHours * 60 + PAYMENT_EXPIRY_REMINDER_MINUTES + 1) *
-            60 *
-            1000,
+          (PAYMENT_EXPIRY_REMINDER_MINUTES + 1) * 60 * 1000,
       ),
       minutesLeft: PAYMENT_EXPIRY_REMINDER_MINUTES,
     });
@@ -747,11 +749,17 @@ export const bookingService = {
         createdAt: booking.createdAt,
         pendingExpiresAt:
           booking.status === "PAYMENT_PENDING"
-            ? (booking.payment?.qrisExpiresAt ??
-              getDepositPaymentDeadline({
-                scheduledStart: booking.scheduledStart,
-                deadlineHours,
-              }))
+            ? getEarlierDeadline(
+                booking.payment?.qrisExpiresAt ??
+                  getPendingBookingHoldExpiresAt(booking.createdAt),
+                getEarlierDeadline(
+                  getPendingBookingHoldExpiresAt(booking.createdAt),
+                  getDepositPaymentDeadline({
+                    scheduledStart: booking.scheduledStart,
+                    deadlineHours,
+                  }),
+                ),
+              )
             : null,
         scheduledStart: booking.scheduledStart,
         scheduledEnd: booking.scheduledEnd,

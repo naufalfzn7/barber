@@ -8,6 +8,11 @@ import {
 import { env } from "@/server/core/env";
 import { paymentRepository } from "@/server/repositories/paymentRepository";
 import {
+  getEarlierDeadline,
+  getPendingBookingHoldExpiresAt,
+  PENDING_BOOKING_HOLD_MINUTES,
+} from "@/server/services/bookingHold";
+import {
   formatDepositDeadlineLabel,
   getDepositPaymentDeadline,
   getDepositPaymentDeadlineHours,
@@ -420,10 +425,13 @@ export const paymentService = {
       ? await getDepositPaymentDeadlineHours()
       : null;
     const expiresAt = payment.isDeposit
-      ? getDepositPaymentDeadline({
-          scheduledStart: payment.booking.scheduledStart,
-          deadlineHours: deadlineHours ?? 1,
-        })
+      ? getEarlierDeadline(
+          getDepositPaymentDeadline({
+            scheduledStart: payment.booking.scheduledStart,
+            deadlineHours: deadlineHours ?? 1,
+          }),
+          getPendingBookingHoldExpiresAt(payment.booking.createdAt),
+        )
       : undefined;
 
     if (
@@ -432,7 +440,7 @@ export const paymentService = {
         MIN_XENDIT_INVOICE_DURATION_SECONDS * 1000
     ) {
       throw new Error(
-        `Batas pembayaran deposit sudah lewat. Pembayaran harus dilakukan paling lambat ${formatDepositDeadlineLabel(deadlineHours ?? 1)} sebelum jadwal reservasi.`,
+        `Batas pembayaran deposit sudah lewat. Selesaikan pembayaran maksimal ${PENDING_BOOKING_HOLD_MINUTES} menit setelah reservasi dibuat atau paling lambat ${formatDepositDeadlineLabel(deadlineHours ?? 1)} sebelum jadwal reservasi.`,
       );
     }
 

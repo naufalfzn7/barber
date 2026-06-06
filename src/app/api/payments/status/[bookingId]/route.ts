@@ -5,7 +5,10 @@ import {
 } from "@/server/core/auth";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 import {
-  formatDepositDeadlineLabel,
+  getPendingBookingHoldCutoff,
+  PENDING_BOOKING_HOLD_MINUTES,
+} from "@/server/services/bookingHold";
+import {
   getDepositPaymentDeadlineHours,
   getExpiredPendingBookingCutoff,
 } from "@/server/services/depositSettings";
@@ -26,12 +29,14 @@ export async function GET(
 
   try {
     const deadlineHours = await getDepositPaymentDeadlineHours();
+    const now = new Date();
     await bookingRepository.releaseExpiredPendingBookings({
-      before: getExpiredPendingBookingCutoff({
-        now: new Date(),
+      scheduledStartBefore: getExpiredPendingBookingCutoff({
+        now,
         deadlineHours,
       }),
-      reason: `Auto canceled because deposit was not paid ${formatDepositDeadlineLabel(deadlineHours)} sebelum reservasi`,
+      createdAtBefore: getPendingBookingHoldCutoff(now),
+      reason: `Auto canceled because deposit was not paid within ${PENDING_BOOKING_HOLD_MINUTES} minutes`,
     });
 
     const { bookingId } = await context.params;
