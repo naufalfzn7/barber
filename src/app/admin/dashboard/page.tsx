@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useToastFeedback } from "@/components/ui/useToastFeedback";
-import { formatIndonesianDate, formatIndonesianTime } from "@/lib/dateFormat";
+import { formatIndonesianTime } from "@/lib/dateFormat";
 import { authFetch } from "@/lib/authClient";
+import { ClientTodayLabel, useClientTodayIso } from "@/components/ui/ClientDateText";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 
@@ -117,107 +119,104 @@ function StatCard({
 }
 
 export default function DashboardPage() {
-  const [role, setRole] = useState<Role | null>(null);
   const [branchId, setBranchId] = useState("");
-  const [branches, setBranches] = useState<BranchOption[]>([]);
-  const [dashboard, setDashboard] = useState<DashboardResponse | null>(null);
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const today = useClientTodayIso();
 
-  useToastFeedback({ error });
+  const bootstrapQuery = useQuery({
+    queryKey: ["admin", "dashboard", "bootstrap"],
+    staleTime: 5 * 60_000,
+    queryFn: async () => {
+      const [meRes, catalogRes] = await Promise.all([
+        authFetch("/api/auth/me", { cache: "no-store" }),
+        authFetch("/api/bookings/catalog"),
+      ]);
 
-  useEffect(() => {
-    async function bootstrap() {
-      try {
-        setLoading(true);
+      const me = (await meRes.json()) as MeResponse;
+      const catalog = (await catalogRes.json()) as CatalogResponse;
 
-        const meRes = await authFetch("/api/auth/me");
-        const me = (await meRes.json()) as MeResponse;
-        if (!meRes.ok || !me.user?.role) {
-          throw new Error(me.message ?? "Gagal memuat sesi");
-        }
-
-        const catalogRes = await authFetch("/api/bookings/catalog");
-        const catalog = (await catalogRes.json()) as CatalogResponse;
-        if (!catalogRes.ok) {
-          throw new Error(catalog.message ?? "Gagal memuat cabang");
-        }
-
-        const catalogBranches = catalog.branches ?? [];
-        setRole(me.user.role);
-        setBranches(catalogBranches);
-        setBranchId(
-          me.user.role === "ADMIN"
-            ? (me.user.branchId ?? catalogBranches[0]?.id ?? "")
-            : (catalogBranches[0]?.id ?? ""),
-        );
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Gagal memuat dashboard");
-      } finally {
-        setLoading(false);
+      if (!meRes.ok || !me.user?.role) {
+        throw new Error(me.message ?? "Gagal memuat sesi");
       }
+
+      if (!catalogRes.ok) {
+        throw new Error(catalog.message ?? "Gagal memuat cabang");
+      }
+
+      return {
+        role: me.user.role,
+        branchId: me.user.branchId ?? null,
+        branches: catalog.branches ?? [],
+      };
+    },
+  });
+
+  const role = bootstrapQuery.data?.role ?? null;
+  const branches = useMemo(
+    () => bootstrapQuery.data?.branches ?? [],
+    [bootstrapQuery.data?.branches],
+  );
+  const initialBranchId = useMemo(() => {
+    if (!bootstrapQuery.data) {
+      return "";
     }
 
-    void bootstrap();
-  }, []);
+    return bootstrapQuery.data.role === "ADMIN"
+      ? (bootstrapQuery.data.branchId ?? bootstrapQuery.data.branches[0]?.id ?? "")
+      : (bootstrapQuery.data.branches[0]?.id ?? "");
+  }, [bootstrapQuery.data]);
+  const selectedBranchId = branchId || initialBranchId;
 
-  useEffect(() => {
-    async function loadDashboard() {
-      if (!branchId || !role) {
-        return;
+  const dashboardQuery = useQuery({
+    queryKey: ["admin", "dashboard", today, role, selectedBranchId],
+    enabled: Boolean(today && selectedBranchId && role),
+    staleTime: 30_000,
+    queryFn: async () => {
+      const query = new URLSearchParams({ date: today });
+      if (role === "SUPER_ADMIN") {
+        query.set("branchId", selectedBranchId);
       }
 
-      try {
-        setLoading(true);
-        setError(null);
+      const [dashboardRes, alertsRes] = await Promise.all([
+        authFetch(`/api/bookings/admin/today?${query.toString()}`),
+        authFetch(
+          `/api/inventory/alerts${role === "SUPER_ADMIN" ? `?branchId=${selectedBranchId}` : ""}`,
+        ),
+      ]);
 
-        const date = new Date().toISOString().slice(0, 10);
-        const query = new URLSearchParams({ date });
-        if (role === "SUPER_ADMIN") {
-          query.set("branchId", branchId);
-        }
+      const dashboardJson = (await dashboardRes.json()) as DashboardResponse & {
+        message?: string;
+      };
+      const alertsJson = (await alertsRes.json()) as AlertsResponse & {
+        message?: string;
+      };
 
-        const [dashboardRes, alertsRes] = await Promise.all([
-          authFetch(`/api/bookings/admin/today?${query.toString()}`),
-          authFetch(
-            `/api/inventory/alerts${role === "SUPER_ADMIN" ? `?branchId=${branchId}` : ""}`,
-          ),
-        ]);
-
-        const dashboardJson =
-          (await dashboardRes.json()) as DashboardResponse & {
-            message?: string;
-          };
-        const alertsJson = (await alertsRes.json()) as AlertsResponse & {
-          message?: string;
-        };
-
-        if (!dashboardRes.ok) {
-          throw new Error(
-            dashboardJson.message ?? "Gagal memuat reservasi harian",
-          );
-        }
-
-        if (!alertsRes.ok) {
-          throw new Error(alertsJson.message ?? "Gagal memuat alert stok");
-        }
-
-        setDashboard(dashboardJson);
-        setAlerts(alertsJson.alerts ?? []);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Gagal memuat dashboard");
-      } finally {
-        setLoading(false);
+      if (!dashboardRes.ok) {
+        throw new Error(dashboardJson.message ?? "Gagal memuat reservasi harian");
       }
-    }
 
-    void loadDashboard();
-  }, [branchId, role]);
+      if (!alertsRes.ok) {
+        throw new Error(alertsJson.message ?? "Gagal memuat alert stok");
+      }
+
+      return {
+        dashboard: dashboardJson,
+        alerts: alertsJson.alerts ?? [],
+      };
+    },
+  });
+
+  const dashboard = dashboardQuery.data?.dashboard ?? null;
+  const alerts = dashboardQuery.data?.alerts ?? [];
+  const error = bootstrapQuery.error ?? dashboardQuery.error;
+  const loading = bootstrapQuery.isLoading || dashboardQuery.isLoading;
+
+  useToastFeedback({
+    error: error instanceof Error ? error.message : null,
+  });
 
   const selectedBranch = useMemo(
-    () => branches.find((branch) => branch.id === branchId) ?? null,
-    [branches, branchId],
+    () => branches.find((branch) => branch.id === selectedBranchId) ?? null,
+    [branches, selectedBranchId],
   );
 
   const completedRevenue = useMemo(
@@ -301,7 +300,7 @@ export default function DashboardPage() {
         <div className="flex items-center gap-2 flex-wrap">
           {role === "SUPER_ADMIN" && (
             <select
-              value={branchId}
+              value={selectedBranchId}
               onChange={(event) => setBranchId(event.target.value)}
               className="px-3 py-2 text-xs border border-gray-200 rounded-lg bg-white"
             >
@@ -313,7 +312,7 @@ export default function DashboardPage() {
             </select>
           )}
           <span className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-600">
-            {formatIndonesianDate(new Date())}
+            <ClientTodayLabel />
           </span>
         </div>
       </div>

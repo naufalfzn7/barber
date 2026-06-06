@@ -1,6 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { AuthAwareReservationLink } from "@/components/ui/AuthAwareReservationLink";
 
 type ServiceTier = { label: string; price: number; description?: string };
 
@@ -225,11 +225,7 @@ const products = [
 const fmt = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
 
 export default async function ServicesPage() {
-  const cookieStore = await cookies();
-  const isAuthenticated = cookieStore.has("mb_access_token");
-  const bookingHref = isAuthenticated
-    ? "/reservasi"
-    : `/login?next=${encodeURIComponent("/reservasi")}`;
+  "use cache";
 
   return (
     <main className="bg-[#EBEBEB] min-h-screen">
@@ -256,12 +252,12 @@ export default async function ServicesPage() {
                 Core Services
               </h2>
             </div>
-            <Link
-              href={bookingHref}
+            <AuthAwareReservationLink
+              href="/reservasi"
               className="hidden md:inline-flex items-center gap-2 bg-transparent border border-black text-black text-xs font-bold tracking-[0.2em] uppercase px-6 py-3 hover:bg-black hover:text-white transition-all"
-            >
-              {isAuthenticated ? "Buat Reservasi" : "Login untuk Reservasi"}
-            </Link>
+              authenticatedLabel="Buat Reservasi"
+              unauthenticatedLabel="Login untuk Reservasi"
+            />
           </div>
 
           <div className="flex flex-col gap-16">
@@ -373,12 +369,12 @@ export default async function ServicesPage() {
                   <span className="text-2xl font-bold text-white tracking-wider">
                     {fmt(p.price)}
                   </span>
-                  <Link
-                    href={bookingHref}
+                  <AuthAwareReservationLink
+                    href="/reservasi"
                     className="text-[11px] font-bold tracking-[0.2em] uppercase text-black bg-white px-4 py-2 hover:bg-white/80 transition-colors"
-                  >
-                    Reservasi
-                  </Link>
+                    authenticatedLabel="Reservasi"
+                    unauthenticatedLabel="Login"
+                  />
                 </div>
               </div>
             ))}

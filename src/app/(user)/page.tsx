@@ -1,7 +1,6 @@
 import Image from "next/image";
-import Link from "next/link";
-import { cookies } from "next/headers";
 import GlobeWrapper from "@/components/features/globe/Globe";
+import { AuthAwareReservationLink } from "@/components/ui/AuthAwareReservationLink";
 import { barbershopLocations, globeMarkers } from "@/lib/data";
 import type { Metadata } from "next";
 
@@ -12,8 +11,7 @@ export const metadata: Metadata = {
 };
 
 export default async function HomePage() {
-  const cookieStore = await cookies();
-  const isAuthenticated = cookieStore.has("mb_access_token");
+  "use cache";
 
   return (
     <main className="bg-[#EBEBEB]">
@@ -82,18 +80,12 @@ export default async function HomePage() {
                     {loc.description}
                   </p>
                   <div className="mt-4">
-                    <Link
-                      href={
-                        isAuthenticated
-                          ? loc.bookingUrl
-                          : `/login?next=${encodeURIComponent(loc.bookingUrl)}`
-                      }
+                    <AuthAwareReservationLink
+                      href={loc.bookingUrl}
                       className="inline-block bg-black text-white px-10 py-4 text-[10px] tracking-[0.25em] font-bold uppercase hover:bg-[#333] transition-all"
-                    >
-                      {isAuthenticated
-                        ? "BUAT RESERVASI"
-                        : "LOGIN UNTUK RESERVASI"}
-                    </Link>
+                      authenticatedLabel="BUAT RESERVASI"
+                      unauthenticatedLabel="LOGIN UNTUK RESERVASI"
+                    />
                   </div>
                 </div>
               ))}

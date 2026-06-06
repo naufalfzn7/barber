@@ -3,10 +3,10 @@
 import { useState } from "react";
 import Link from "next/link";
 import { socialLinks, footerLocations } from "@/lib/data";
+import { ClientYear } from "@/components/ui/ClientDateText";
 
 export default function Footer() {
   const [email, setEmail] = useState("");
-  const currentYear = new Date().getFullYear();
 
   return (
     <footer className="relative border-t border-black/10 bg-linear-to-b from-[#D4DCE2] to-[#EBEBEB] text-black">
@@ -66,7 +66,7 @@ export default function Footer() {
               ))}
             </ul>
             <p className="text-[10px] tracking-widest text-gray-500 mt-12">
-              © {currentYear}, Monarch Barber
+              © <ClientYear />, Monarch Barber
             </p>
           </div>
 

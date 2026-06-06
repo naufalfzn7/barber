@@ -799,7 +799,9 @@ export default function ReservasiPage() {
       }
 
       try {
-        const response = await authFetch(`/api/payments/booking/${bookingId}`);
+        const response = await authFetch(`/api/payments/booking/${bookingId}`, {
+          cache: "no-store",
+        });
         const json = (await response.json()) as {
           message?: string;
           booking?: { status?: BookingItem["status"] };

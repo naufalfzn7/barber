@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
 import { navItems, rightNavItems, socialLinks } from "@/lib/data";
 import { NavItem } from "@/types";
@@ -207,69 +208,59 @@ export default function Header() {
   const [openDropdowns, setOpenDropdowns] = useState<Record<string, boolean>>(
     {},
   );
-  const [session, setSession] = useState<AuthSession | null>(null);
   const router = useRouter();
   const pathname = usePathname();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     setMobileOpen(false);
     setOpenDropdowns({});
   }, [pathname]);
 
-  useEffect(() => {
-    let active = true;
-
-    if (pathname === "/login") {
-      setSession(null);
-      return;
-    }
-
-    async function loadSession() {
-      try {
-        const response = await authFetch("/api/auth/me", { cache: "no-store" });
-        if (!response.ok) {
-          setSession(null);
-          return;
-        }
-
-        const data = (await response.json()) as {
-          user?: {
-            role?: AuthRole;
-            fullName?: string;
-            branchId?: string | null;
-          };
-        };
-
-        if (!active) return;
-
-        setSession(
-          data.user?.role && data.user?.fullName
-            ? {
-                role: data.user.role,
-                fullName: data.user.fullName,
-                branchId: data.user.branchId,
-              }
-            : null,
-        );
-      } catch {
-        setSession(null);
+  const { data: session = null } = useQuery({
+    queryKey: ["auth", "me"],
+    enabled: pathname !== "/login",
+    staleTime: 60_000,
+    queryFn: async (): Promise<AuthSession | null> => {
+      const response = await authFetch("/api/auth/me", { cache: "no-store" });
+      if (!response.ok) {
+        return null;
       }
+
+      const data = (await response.json()) as {
+        user?: {
+          role?: AuthRole;
+          fullName?: string;
+          branchId?: string | null;
+        };
+      };
+
+      if (!data.user?.role || !data.user.fullName) {
+        return null;
+      }
+
+      return {
+        role: data.user.role,
+        fullName: data.user.fullName,
+        branchId: data.user.branchId,
+      };
+    },
+  });
+
+  useEffect(() => {
+    function handleAuthChanged() {
+      void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
     }
 
-    void loadSession();
-    window.addEventListener("auth:changed", loadSession);
-
-    return () => {
-      active = false;
-      window.removeEventListener("auth:changed", loadSession);
-    };
-  }, [pathname]);
+    window.addEventListener("auth:changed", handleAuthChanged);
+    return () => window.removeEventListener("auth:changed", handleAuthChanged);
+  }, [queryClient]);
 
   async function handleLogout() {
     try {
       await authFetch("/api/auth/logout", { method: "POST" });
     } finally {
-      setSession(null);
+      queryClient.removeQueries({ queryKey: ["auth", "me"] });
       notifyClientDataChanged("auth:changed");
       router.refresh();
       router.replace("/");

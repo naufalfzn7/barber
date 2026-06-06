@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useToastFeedback } from "@/components/ui/useToastFeedback";
 import { formatIndonesianDate } from "@/lib/dateFormat";
 import { authFetch } from "@/lib/authClient";
@@ -90,35 +91,27 @@ function StatCard({
 }
 
 export default function SuperAdminDashboard() {
-  const [data, setData] = useState<OverviewResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, error } = useQuery({
+    queryKey: ["superadmin", "overview"],
+    staleTime: 30_000,
+    refetchOnMount: false,
+    queryFn: async () => {
+      const response = await authFetch("/api/superadmin/overview");
+      const json = (await response.json()) as OverviewResponse & {
+        message?: string;
+      };
 
-  useToastFeedback({ error });
-
-  useEffect(() => {
-    async function load() {
-      try {
-        setLoading(true);
-        const response = await authFetch("/api/superadmin/overview");
-        const json = (await response.json()) as OverviewResponse & {
-          message?: string;
-        };
-
-        if (!response.ok) {
-          throw new Error(json.message ?? "Gagal memuat overview");
-        }
-
-        setData(json);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Gagal memuat dashboard");
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal memuat overview");
       }
-    }
 
-    void load();
-  }, []);
+      return json;
+    },
+  });
+
+  useToastFeedback({
+    error: error instanceof Error ? error.message : null,
+  });
 
   const sortedBranches = useMemo(
     () => [...(data?.branches ?? [])].sort((a, b) => b.revenue - a.revenue),
@@ -156,7 +149,7 @@ export default function SuperAdminDashboard() {
         </div>
       </div>
 
-      {loading && (
+      {isLoading && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {Array.from({ length: 4 }).map((_, index) => (
             <div

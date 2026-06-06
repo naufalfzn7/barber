@@ -391,7 +391,9 @@ export default function MemberBookingPanel() {
         query.set("barbermanId", barbermanId);
       }
 
-      const response = await authFetch(`/api/bookings/slots?${query.toString()}`);
+      const response = await authFetch(`/api/bookings/slots?${query.toString()}`, {
+        cache: "no-store",
+      });
       const data = (await response.json()) as {
         slots?: BookingSlot[];
         message?: string;

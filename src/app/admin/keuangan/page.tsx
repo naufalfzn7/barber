@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useToastFeedback } from "@/components/ui/useToastFeedback";
-import { formatIndonesianDate, formatIndonesianTime } from "@/lib/dateFormat";
+import { formatIndonesianTime } from "@/lib/dateFormat";
 import { authFetch } from "@/lib/authClient";
+import { ClientTodayLabel } from "@/components/ui/ClientDateText";
 
 type Role = "ADMIN" | "SUPER_ADMIN";
 
@@ -283,7 +284,7 @@ export default function KeuanganPage() {
             </select>
           )}
           <span className="px-3 py-1 rounded-full bg-gray-100 text-xs text-gray-600">
-            {formatIndonesianDate(new Date())} · {selectedBranchName}
+            <ClientTodayLabel /> · {selectedBranchName}
           </span>
         </div>
       </div>

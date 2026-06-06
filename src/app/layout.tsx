@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
 import "sweetalert2/dist/sweetalert2.min.css";
 import "./globals.css";
+import { Providers } from "@/app/providers";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 
 const poppins = Poppins({
@@ -25,8 +26,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={poppins.variable}>
       <body className="font-poppins antialiased min-h-screen flex flex-col">
-        <ToastProvider />
-        {children}
+        <Providers>
+          <ToastProvider />
+          {children}
+        </Providers>
       </body>
     </html>
   );

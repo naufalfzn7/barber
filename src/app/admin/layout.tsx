@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { RouteRulesPanel } from "@/components/ui/RouteRulesPanel";
 import { authFetch, notifyClientDataChanged } from "@/lib/authClient";
-import { formatIndonesianDate } from "@/lib/dateFormat";
+import { ClientTodayLabel } from "@/components/ui/ClientDateText";
 import {
   useChangePassword,
   ChangePasswordModal,
@@ -312,7 +312,7 @@ export default function AdminLayout({
 
           <div className="flex items-center gap-3">
             <span className="text-xs text-gray-400 hidden md:block">
-              {formatIndonesianDate(new Date())}
+              <ClientTodayLabel />
             </span>
             <button className="relative border border-black/10 p-2 transition-colors hover:bg-[#F4F1EC]">
               <svg

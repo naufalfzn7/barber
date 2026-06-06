@@ -363,6 +363,7 @@ export default function DepositPaymentModal({
       try {
         const statusRes = await authFetch(
           `/api/payments/status/${bookingId}?isDeposit=true`,
+          { cache: "no-store" },
         );
         const statusData = await statusRes.json();
         const newStatus = statusData.payment?.status as PaymentStatus;
