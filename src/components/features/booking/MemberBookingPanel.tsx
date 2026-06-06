@@ -647,10 +647,11 @@ export default function MemberBookingPanel() {
     return (
       <div className="max-w-2xl mx-auto bg-white border border-black/10 p-8 text-center">
         <p className="text-xs tracking-[0.2em] uppercase text-black/50">
-          Booking
+          Reservasi Member
         </p>
         <p className="mt-3 text-sm text-black/70">
-          Login sebagai member untuk melakukan booking online.
+          Masuk dengan akun member untuk memilih cabang, melihat slot real-time,
+          dan melanjutkan pembayaran deposit QRIS.
         </p>
         <Link
           href={`/login?next=${encodeURIComponent("/reservasi")}`}
@@ -666,25 +667,26 @@ export default function MemberBookingPanel() {
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
       <div className="bg-white border border-black/10 p-6 md:p-8">
         <p className="text-xs tracking-[0.2em] uppercase text-black/50">
-          Booking Form
+          Detail Reservasi
         </p>
 
         {/* Deposit Info Alert */}
         {selectedService && (
           <div className="mt-4 bg-blue-50 border border-blue-200 p-4 rounded">
             <p className="text-xs text-black/70 mb-2">
-              <span className="font-semibold">Catatan Pembayaran:</span> Anda
-              perlu membayar deposit{" "}
+              <span className="font-semibold">Pembayaran deposit:</span> Anda
+              perlu membayar{" "}
               <span className="font-bold text-blue-600">
                 {depositPercentage}%
               </span>{" "}
-              (Rp {depositAmount.toLocaleString("id-ID")}) terlebih dahulu via
-              QRIS sebelum booking dikonfirmasi.
+              dari harga layanan (Rp {depositAmount.toLocaleString("id-ID")})
+              melalui QRIS untuk mengonfirmasi reservasi.
             </p>
             <p className="text-xs text-black/60">
               Sisa pembayaran Rp{" "}
               {(selectedService.price - depositAmount).toLocaleString("id-ID")}{" "}
-              dapat dibayar setelah layanan selesai.
+              dapat dibayar di kasir setelah layanan selesai. Slot hanya
+              ditahan sementara sampai deposit berhasil dibayar.
             </p>
           </div>
         )}
@@ -762,7 +764,7 @@ export default function MemberBookingPanel() {
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               className="mt-1 w-full border border-black/20 px-3 py-2 text-sm min-h-20"
-              placeholder="Contoh: minta style low taper"
+              placeholder="Tulis preferensi model rambut, kebutuhan khusus, atau catatan untuk barberman."
             />
           </label>
 
@@ -772,7 +774,7 @@ export default function MemberBookingPanel() {
             disabled={loadingSlots}
             className="w-full bg-black text-white py-2.5 text-xs tracking-[0.18em] uppercase font-semibold disabled:opacity-60"
           >
-            {loadingSlots ? "Loading Slots..." : "Cek Slot"}
+            {loadingSlots ? "Memeriksa Slot..." : "Cek Slot Tersedia"}
           </button>
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -787,7 +789,7 @@ export default function MemberBookingPanel() {
         {slots.length > 0 && (
           <div className="mt-6">
             <p className="text-xs uppercase tracking-[0.16em] text-black/70">
-              Pilih Slot
+              Pilih Jam Kunjungan
             </p>
             <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
               {slots.map((slot) => {
@@ -831,7 +833,7 @@ export default function MemberBookingPanel() {
               disabled={!selectedStart || submitting}
               className="w-full mt-4 bg-[#1f7d53] text-white py-2.5 text-xs tracking-[0.18em] uppercase font-semibold disabled:opacity-50"
             >
-              {submitting ? "Memproses..." : "Book Sekarang"}
+              {submitting ? "Menahan Slot..." : "Buat Reservasi"}
             </button>
           </div>
         )}

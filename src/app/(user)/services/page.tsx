@@ -260,7 +260,7 @@ export default async function ServicesPage() {
               href={bookingHref}
               className="hidden md:inline-flex items-center gap-2 bg-transparent border border-black text-black text-xs font-bold tracking-[0.2em] uppercase px-6 py-3 hover:bg-black hover:text-white transition-all"
             >
-              {isAuthenticated ? "Book Now" : "Login To Book"}
+              {isAuthenticated ? "Buat Reservasi" : "Login untuk Reservasi"}
             </Link>
           </div>
 
@@ -377,7 +377,7 @@ export default async function ServicesPage() {
                     href={bookingHref}
                     className="text-[11px] font-bold tracking-[0.2em] uppercase text-black bg-white px-4 py-2 hover:bg-white/80 transition-colors"
                   >
-                    Book
+                    Reservasi
                   </Link>
                 </div>
               </div>
@@ -446,7 +446,7 @@ export default async function ServicesPage() {
                     sizes="(max-width: 768px) 50vw, 25vw"
                   />
                   <div className="absolute top-2 left-2 bg-white text-black text-[9px] font-bold px-2 py-1 uppercase tracking-widest z-10">
-                    Stocked
+                    Tersedia
                   </div>
                 </div>
                 <h3 className="text-sm font-bold tracking-widest uppercase text-white mb-1">
@@ -471,7 +471,7 @@ export default async function ServicesPage() {
             !
           </div>
           <h2 className="text-4xl md:text-5xl font-normal tracking-[0.15em] uppercase text-black mb-6">
-            Book Your Session
+            Reservasi Sesi Grooming
           </h2>
           <p className="text-sm text-black/60 max-w-md mx-auto mb-10 leading-relaxed font-medium">
             Pilih layanan dan barber favorit Anda. Kami siap memberikan
@@ -481,7 +481,7 @@ export default async function ServicesPage() {
             href="/reservasi"
             className="inline-flex items-center gap-3 bg-black text-white text-sm font-bold tracking-[0.25em] uppercase px-12 py-5 hover:bg-transparent hover:text-black hover:shadow-[inset_0_0_0_2px_black] transition-all"
           >
-            [ Appointment ]
+            [ Buat Reservasi ]
           </Link>
         </div>
       </section>

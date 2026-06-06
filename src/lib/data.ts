@@ -22,7 +22,7 @@ export const rightNavItems: NavItem[] = [
     ],
   },
   { label: "LOGIN", href: "/login" },
-  { label: "GET IN TOUCH", href: "/contact" },
+  { label: "KONTAK", href: "/contact" },
 ];
 
 export const socialLinks = [

@@ -79,20 +79,21 @@ function BookingCtaPanel() {
   return (
     <div className="max-w-3xl mx-auto bg-white border border-black/10 p-8 md:p-10 text-center">
       <p className="text-xs tracking-[0.2em] uppercase text-black/50">
-        Booking Member
+        Reservasi Cabang
       </p>
       <h3 className="mt-3 text-2xl md:text-3xl uppercase tracking-[0.12em] font-medium text-black">
-        Booking Dipusatkan di Halaman Reservasi
+        Pilih Jadwal untuk Cabang Ini
       </h3>
       <p className="mt-4 text-sm text-black/65 leading-relaxed">
-        Untuk pengalaman yang konsisten, form booking dan riwayat booking kini
-        tersedia penuh di halaman reservasi terpusat.
+        Lihat layanan, pilih barberman, cek ketersediaan jam, lalu konfirmasi
+        reservasi dengan deposit QRIS. Semua riwayat booking dan nota digital
+        tersimpan di akun member Anda.
       </p>
       <Link
         href="/reservasi"
         className="inline-block mt-6 bg-black text-white px-8 py-3 text-xs tracking-[0.2em] uppercase font-semibold"
       >
-        Buka Halaman Reservasi
+        Buat Reservasi
       </Link>
     </div>
   );
@@ -145,8 +146,8 @@ export default function LocationPage({ data }: LocationPageProps) {
               OUR {data.cityName} TEAM
             </h2>
             <p className="text-sm text-black font-medium tracking-wide">
-              Pilih barber secara langsung atau gunakan formulir booking di
-              bawah ini.
+              Kenali barberman kami, lalu pilih jadwal kunjungan yang paling
+              sesuai melalui halaman reservasi.
             </p>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
@@ -161,8 +162,8 @@ export default function LocationPage({ data }: LocationPageProps) {
       <section className="py-20 md:py-24">
         <div className="max-w-[79.2rem] mx-auto px-4 md:px-8">
           <SectionHeading
-            title="CHECK OUT OUR PRICE LIST!"
-            subtitle="All haircuts come with a free drink and hot towel neck shave."
+            title="DAFTAR HARGA LAYANAN"
+            subtitle="Harga dapat berbeda sesuai cabang, durasi layanan, dan paket yang dipilih. Detail final akan tampil sebelum Anda membuat reservasi."
           />
           <PriceList tabs={data.priceTabs} sideImage={data.priceImage} />
         </div>
@@ -171,7 +172,7 @@ export default function LocationPage({ data }: LocationPageProps) {
       {/* Booking */}
       <section id="book" className="py-20 md:py-24">
         <div className="max-w-[79.2rem] mx-auto px-4 md:px-8">
-          <SectionHeading title="BOOK YOUR SLOT" />
+          <SectionHeading title="RESERVASI KUNJUNGAN" />
           <BookingCtaPanel />
         </div>
       </section>

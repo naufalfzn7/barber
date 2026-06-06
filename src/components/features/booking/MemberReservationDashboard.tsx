@@ -303,7 +303,9 @@ export default function MemberReservationDashboard() {
             Reservasi Saya
           </h1>
           <p className="text-sm text-black/60 mt-2">
-            Kelola dan lihat detail reservasi Anda, serta unduh nota digital
+            Pantau status booking, lanjutkan pembayaran deposit, batalkan
+            reservasi yang belum dibayar, dan unduh nota setelah transaksi
+            selesai.
           </p>
         </div>
 
@@ -317,7 +319,7 @@ export default function MemberReservationDashboard() {
                 : "border-transparent text-black/60 hover:text-black"
             }`}
           >
-            On Process ({onProcessBookings.length})
+            Sedang Berjalan ({onProcessBookings.length})
           </button>
           <button
             onClick={() => setActiveTab("history")}
@@ -327,7 +329,7 @@ export default function MemberReservationDashboard() {
                 : "border-transparent text-black/60 hover:text-black"
             }`}
           >
-            History All Time ({historyBookings.length})
+            Riwayat Reservasi ({historyBookings.length})
           </button>
         </div>
 
@@ -341,7 +343,8 @@ export default function MemberReservationDashboard() {
             {onProcessBookings.length === 0 ? (
               <div className="bg-white border border-black/10 p-12 text-center">
                 <p className="text-black/60">
-                  Tidak ada reservasi yang sedang berjalan
+                  Belum ada reservasi aktif. Pilih jadwal di form reservasi
+                  untuk mengamankan slot kunjungan Anda.
                 </p>
               </div>
             ) : (

@@ -6,9 +6,9 @@ import { barbershopLocations, globeMarkers } from "@/lib/data";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Monarch Barber — Book your appointment today",
+  title: "Monarch Barber | Premium Barbershop Surakarta & Yogyakarta",
   description:
-    "Premium barbershops di Surakarta dan Yogyakarta. Nikmati layanan grooming terbaik dengan standar tinggi.",
+    "Reservasi layanan grooming premium di cabang Monarch Barber Surakarta dan Yogyakarta. Pilih jadwal, barberman, dan layanan favorit Anda.",
 };
 
 export default async function HomePage() {
@@ -24,11 +24,11 @@ export default async function HomePage() {
             {/* Teks Kiri */}
             <div className="max-w-xl pr-4 lg:pr-12">
               <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-[64px] leading-[1.1] font-medium tracking-wide uppercase text-black">
-                BOOK YOUR
+                RESERVASI
                 <br />
-                APPOINTMENT
+                GROOMING
                 <br />
-                TODAY!
+                PREMIUM
               </h1>
             </div>
 
@@ -55,7 +55,7 @@ export default async function HomePage() {
               BARBERSHOPS
             </h2>
             <p className="mt-3 text-sm text-gray-500 tracking-wide">
-              Explore Our Store
+              Pilih cabang Monarch terdekat dan amankan jadwal kunjungan Anda.
             </p>
           </div>
 
@@ -90,7 +90,9 @@ export default async function HomePage() {
                       }
                       className="inline-block bg-black text-white px-10 py-4 text-[10px] tracking-[0.25em] font-bold uppercase hover:bg-[#333] transition-all"
                     >
-                      {isAuthenticated ? "BOOK NOW" : "LOGIN TO BOOK"}
+                      {isAuthenticated
+                        ? "BUAT RESERVASI"
+                        : "LOGIN UNTUK RESERVASI"}
                     </Link>
                   </div>
                 </div>

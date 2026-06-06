@@ -13,11 +13,11 @@ export default function Footer() {
       <div className="border-b border-black/10 px-6 pb-10 pt-20 text-center md:px-16 lg:px-24 xl:px-32">
         <div className="max-w-3xl mx-auto">
           <h2 className="mb-4 text-xl font-medium uppercase tracking-[0.25em] text-black md:text-2xl">
-            JOIN THE NEWSLETTER
+            IKUTI KABAR MONARCH
           </h2>
           <p className="mb-10 text-sm font-light tracking-wide text-black/65">
-            To keep up to date with all things Monarch, sign up below and become
-            the first to know!
+            Dapatkan informasi layanan, promo cabang, pembaruan jadwal, dan
+            inspirasi grooming langsung dari Monarch Barber.
           </p>
 
           <form
@@ -31,7 +31,7 @@ export default function Footer() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="E-Mail"
+              placeholder="ALAMAT EMAIL"
               required
               className="min-h-13 flex-1 border border-black/10 bg-white px-5 py-4 text-xs tracking-widest text-black placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-black/15 sm:border-r-0"
             />
@@ -39,7 +39,7 @@ export default function Footer() {
               type="submit"
               className="min-h-13 bg-black px-10 py-4 text-[10px] font-bold uppercase tracking-[0.2em] text-white transition-colors hover:bg-gray-900"
             >
-              SUBSCRIBE NOW
+              DAFTAR
             </button>
           </form>
         </div>
@@ -72,7 +72,7 @@ export default function Footer() {
 
           <div className="lg:mx-auto min-w-30">
             <h4 className="text-[13px] tracking-[0.15em] font-bold mb-6 uppercase text-black">
-              SUPPORT
+              BANTUAN
             </h4>
             <ul className="space-y-4">
               <li>
@@ -80,7 +80,7 @@ export default function Footer() {
                   href="/contact"
                   className="text-[12px] tracking-widest font-medium text-gray-700 hover:text-black uppercase"
                 >
-                  GET IN TOUCH
+                  HUBUNGI KAMI
                 </Link>
               </li>
             </ul>
@@ -88,7 +88,7 @@ export default function Footer() {
 
           <div className="lg:mx-auto min-w-30">
             <h4 className="text-[13px] tracking-[0.15em] font-bold mb-6 uppercase text-black">
-              QUICK LINKS
+              MENU UTAMA
             </h4>
             <ul className="space-y-4">
               <li>
@@ -96,7 +96,7 @@ export default function Footer() {
                   href="/about-us"
                   className="text-[12px] tracking-widest font-medium text-gray-700 hover:text-black uppercase"
                 >
-                  ABOUT US
+                  TENTANG KAMI
                 </Link>
               </li>
             </ul>
