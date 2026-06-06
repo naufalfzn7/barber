@@ -420,8 +420,20 @@ export const bookingService = {
       dayOfWeek,
     );
 
-    if (!operatingHour || operatingHour.isClosed) {
-      return { date: input.date, slots: [] };
+    if (!operatingHour) {
+      return {
+        date: input.date,
+        slots: [],
+        message: "Jam operasional cabang belum diatur untuk tanggal ini",
+      };
+    }
+
+    if (operatingHour.isClosed) {
+      return {
+        date: input.date,
+        slots: [],
+        message: "Cabang tutup pada tanggal yang dipilih",
+      };
     }
 
     const barbermen = await bookingRepository.findBarbermen(
@@ -429,7 +441,11 @@ export const bookingService = {
       input.barbermanId,
     );
     if (!barbermen.length) {
-      return { date: input.date, slots: [] };
+      return {
+        date: input.date,
+        slots: [],
+        message: "Tidak ada barberman aktif untuk pilihan ini",
+      };
     }
 
     const holidays = await bookingRepository.findHolidays(

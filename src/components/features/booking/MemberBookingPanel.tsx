@@ -229,6 +229,7 @@ export default function MemberBookingPanel() {
   const [selectedStart, setSelectedStart] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [slotNotice, setSlotNotice] = useState<string | null>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -369,12 +370,14 @@ export default function MemberBookingPanel() {
   async function loadSlots() {
     if (!branchId || !serviceId || !date) {
       setError("Pilih cabang, layanan, dan tanggal terlebih dahulu");
+      setSlotNotice(null);
       return;
     }
 
     setLoadingSlots(true);
     setError(null);
     setMessage(null);
+    setSlotNotice(null);
     setSelectedStart("");
 
     try {
@@ -396,16 +399,20 @@ export default function MemberBookingPanel() {
 
       if (!response.ok) {
         setError(data.message ?? "Gagal memuat slot");
+        setSlotNotice(null);
         setSlots([]);
         return;
       }
 
       setSlots(data.slots ?? []);
       if ((data.slots ?? []).length === 0) {
-        setMessage("Tidak ada slot tersedia untuk pilihan ini");
+        setSlotNotice(
+          data.message ?? "Tidak ada slot tersedia untuk pilihan ini",
+        );
       }
     } catch {
       setError("Tidak bisa memuat slot saat ini");
+      setSlotNotice(null);
       setSlots([]);
     } finally {
       setLoadingSlots(false);
@@ -431,6 +438,7 @@ export default function MemberBookingPanel() {
     setSubmitting(true);
     setError(null);
     setMessage(null);
+    setSlotNotice(null);
 
     try {
       const response = await authFetch("/api/bookings", {
@@ -507,6 +515,7 @@ export default function MemberBookingPanel() {
     try {
       setLoadingReceipt(true);
       setError(null);
+      setSlotNotice(null);
 
       const response = await authFetch(`/api/payments/receipt/${bookingId}`);
       const json = (await response.json()) as {
@@ -767,6 +776,9 @@ export default function MemberBookingPanel() {
           </button>
 
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
+          {slotNotice ? (
+            <p className="text-sm text-amber-700">{slotNotice}</p>
+          ) : null}
           {message ? (
             <p className="text-sm text-emerald-700">{message}</p>
           ) : null}
