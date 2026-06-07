@@ -1597,15 +1597,25 @@ export default function ReservasiPage() {
               return (
                 <article
                   key={booking.id}
-                  className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+                  className={`rounded-xl border-y border-r border-l-4 p-4 shadow-sm ${
+                    booking.isWalkIn
+                      ? "border-y-orange-100 border-r-orange-100 border-l-orange-500 bg-orange-50/20"
+                      : "border-y-sky-100 border-r-sky-100 border-l-sky-500 bg-sky-50/20"
+                  }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="grid min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)] gap-3">
-                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                    <div className="grid min-w-0 flex-1 grid-cols-[100px_minmax(0,1fr)] gap-4">
+                      <div
+                        className={`flex flex-col items-center justify-center rounded-xl border px-2 py-3 text-center shadow-sm ${
+                          booking.isWalkIn
+                            ? "border-orange-200 bg-orange-100 text-orange-950"
+                            : "border-sky-200 bg-sky-100 text-sky-950"
+                        }`}
+                      >
+                        <p className="text-xs font-black uppercase tracking-widest opacity-60">
                           #{index + 1}
                         </p>
-                        <p className="mt-1 text-lg font-bold leading-none text-gray-950">
+                        <p className="mt-1 text-2xl font-black tabular-nums tracking-tight">
                           {bookingTime}
                         </p>
                       </div>

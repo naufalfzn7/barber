@@ -926,7 +926,7 @@ export const bookingService = {
       throw new Error("Availability is only available for waiting walk-in");
     }
 
-    const serviceStart = new Date();
+    const serviceStart = booking.scheduledStart;
     const serviceTotalMinutes =
       booking.service.durationMinutes + (booking.service.bufferMinutes ?? 0);
     const serviceEnd = new Date(
