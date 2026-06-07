@@ -43,7 +43,7 @@ type BookingItem = {
   }>;
   totalDue: number;
   remainingDue: number;
-  barberman: { id: string; name: string };
+  barberman: { id: string; name: string } | null;
   member: { fullName: string } | null;
   payment?: {
     id: string;
@@ -111,6 +111,28 @@ type BookingProductModalState = {
   bookingId: string;
   bookingCode: string;
   bookingStatus: BookingItem["status"];
+};
+
+type StartWalkInModalState = {
+  bookingId: string;
+  bookingCode: string;
+  customerName: string;
+};
+
+type BarberAvailabilityItem = {
+  id: string;
+  name: string;
+  isAvailable: boolean;
+  reason: string | null;
+};
+
+type BarberAvailabilityResponse = {
+  availability?: {
+    serviceStart: string;
+    serviceEnd: string;
+    barbermen: BarberAvailabilityItem[];
+  };
+  message?: string;
 };
 
 type ReceiptDetail = {
@@ -195,6 +217,13 @@ function toRupiah(value: number) {
 
 function toDateTimeIso(date: string, time: string) {
   return new Date(`${date}T${time}:00`).toISOString();
+}
+
+function currentTimeInputValue() {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(
+    now.getMinutes(),
+  ).padStart(2, "0")}`;
 }
 
 function statusBadge(status: BookingItem["status"]) {
@@ -282,6 +311,44 @@ function timelineSteps(booking: BookingItem) {
   ];
 }
 
+function formatBookingTime(value: string) {
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(value));
+}
+
+function bookingSourceLabel(booking: BookingItem) {
+  return booking.isWalkIn ? "Walk-in" : "Reservasi";
+}
+
+function bookingSourceTone(booking: BookingItem) {
+  return booking.isWalkIn
+    ? "border-orange-200 bg-orange-50 text-orange-700"
+    : "border-sky-200 bg-sky-50 text-sky-700";
+}
+
+function customerName(booking: BookingItem) {
+  return booking.member?.fullName ?? booking.walkInName ?? "Walk-in";
+}
+
+function isUnassignedWalkIn(booking: BookingItem) {
+  return booking.isWalkIn && booking.status === "UPCOMING" && !booking.barberman;
+}
+
+function barberName(booking: BookingItem) {
+  return booking.barberman?.name ?? "Belum assigned";
+}
+
+function isQueueRelevant(booking: BookingItem) {
+  return (
+    booking.status === "UPCOMING" ||
+    booking.status === "IN_PROGRESS" ||
+    booking.status === "PAYMENT_PENDING"
+  );
+}
+
 export default function ReservasiPage() {
   const [role, setRole] = useState<Role | null>(null);
   const [branches, setBranches] = useState<CatalogBranch[]>([]);
@@ -295,8 +362,7 @@ export default function ReservasiPage() {
   const [walkInName, setWalkInName] = useState("");
   const [walkInPhone, setWalkInPhone] = useState("");
   const [walkInServiceId, setWalkInServiceId] = useState("");
-  const [walkInBarberId, setWalkInBarberId] = useState("");
-  const [walkInTime, setWalkInTime] = useState("10:00");
+  const [walkInTime, setWalkInTime] = useState(currentTimeInputValue);
   const [submittingWalkIn, setSubmittingWalkIn] = useState(false);
   const [qrisModal, setQrisModal] = useState<QrisModalState | null>(null);
   const [qrisModalVisible, setQrisModalVisible] = useState(false);
@@ -307,6 +373,15 @@ export default function ReservasiPage() {
   );
   const [productModal, setProductModal] =
     useState<BookingProductModalState | null>(null);
+  const [startWalkInModal, setStartWalkInModal] =
+    useState<StartWalkInModalState | null>(null);
+  const [barberAvailability, setBarberAvailability] = useState<
+    BarberAvailabilityItem[]
+  >([]);
+  const [selectedStartBarberId, setSelectedStartBarberId] = useState("");
+  const [loadingBarberAvailability, setLoadingBarberAvailability] =
+    useState(false);
+  const [startingWalkIn, setStartingWalkIn] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [selectedProductQty, setSelectedProductQty] = useState(1);
   const [savingProduct, setSavingProduct] = useState(false);
@@ -409,10 +484,48 @@ export default function ReservasiPage() {
     );
   }, [data?.bookings, reservationFilter]);
 
+  const barberStatuses = useMemo(() => {
+    const bookings = [...(data?.bookings ?? [])].sort(
+      (first, second) =>
+        new Date(first.scheduledStart).getTime() -
+        new Date(second.scheduledStart).getTime(),
+    );
+
+    return (selectedBranch?.barbermen ?? []).map((barber) => {
+      const barberBookings = bookings.filter(
+        (booking) =>
+          booking.barberman?.id === barber.id && isQueueRelevant(booking),
+      );
+      const activeBooking =
+        barberBookings.find((booking) => booking.status === "IN_PROGRESS") ??
+        null;
+      const nextBooking =
+        barberBookings.find((booking) => booking.status !== "IN_PROGRESS") ??
+        null;
+      const displayBooking = activeBooking ?? nextBooking;
+
+      return {
+        id: barber.id,
+        name: barber.name,
+        state: activeBooking
+          ? "Sedang melayani"
+          : nextBooking
+            ? "Ada antrean"
+            : "Kosong",
+        tone: activeBooking
+          ? "bg-amber-50 text-amber-700 border-amber-200"
+          : nextBooking
+            ? "bg-sky-50 text-sky-700 border-sky-200"
+            : "bg-emerald-50 text-emerald-700 border-emerald-200",
+        booking: displayBooking,
+        queueCount: barberBookings.length,
+      };
+    });
+  }, [data?.bookings, selectedBranch?.barbermen]);
+
   useEffect(() => {
     if (!selectedBranch) {
       setWalkInServiceId("");
-      setWalkInBarberId("");
       return;
     }
 
@@ -421,13 +534,7 @@ export default function ReservasiPage() {
     ) {
       setWalkInServiceId(selectedBranch.services[0]?.id ?? "");
     }
-
-    if (
-      !selectedBranch.barbermen.some((barber) => barber.id === walkInBarberId)
-    ) {
-      setWalkInBarberId("");
-    }
-  }, [selectedBranch, walkInServiceId, walkInBarberId]);
+  }, [selectedBranch, walkInServiceId]);
 
   useEffect(() => {
     async function loadProductCatalog() {
@@ -898,6 +1005,7 @@ export default function ReservasiPage() {
   async function updateStatus(
     bookingId: string,
     status: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW",
+    options?: { barbermanId?: string; skipConfirm?: boolean },
   ) {
     const booking = data?.bookings.find((item) => item.id === bookingId);
     const titleMap = {
@@ -910,19 +1018,21 @@ export default function ReservasiPage() {
       COMPLETED: "Ya, selesaikan",
       NO_SHOW: "Ya, no-show",
     } as const;
-    const confirmed = await confirmAction({
-      title: titleMap[status],
-      text:
-        status === "NO_SHOW"
-          ? `Booking ${booking?.code ?? "ini"} akan dicatat tidak datang. DP/pembayaran yang sudah tercatat tetap tersimpan di riwayat.`
-          : `Status booking ${booking?.code ?? "ini"} akan diubah menjadi ${statusLabel(status)}.`,
-      confirmButtonText: confirmMap[status],
-      icon: "warning",
-      danger: status === "NO_SHOW",
-    });
+    if (!options?.skipConfirm) {
+      const confirmed = await confirmAction({
+        title: titleMap[status],
+        text:
+          status === "NO_SHOW"
+            ? `Booking ${booking?.code ?? "ini"} akan dicatat tidak datang. DP/pembayaran yang sudah tercatat tetap tersimpan di riwayat.`
+            : `Status booking ${booking?.code ?? "ini"} akan diubah menjadi ${statusLabel(status)}.`,
+        confirmButtonText: confirmMap[status],
+        icon: "warning",
+        danger: status === "NO_SHOW",
+      });
 
-    if (!confirmed) {
-      return;
+      if (!confirmed) {
+        return false;
+      }
     }
 
     try {
@@ -932,10 +1042,14 @@ export default function ReservasiPage() {
       const body: {
         status: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW";
         branchId?: string;
+        barbermanId?: string;
         reason?: string;
       } = {
         status,
       };
+      if (options?.barbermanId) {
+        body.barbermanId = options.barbermanId;
+      }
       if (status === "NO_SHOW") {
         body.reason = "Customer did not arrive for scheduled reservation";
       }
@@ -956,8 +1070,90 @@ export default function ReservasiPage() {
 
       setMessage(json.message ?? "Status booking ter-update");
       await loadDashboard();
+      return true;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal update status");
+      return false;
+    }
+  }
+
+  async function openStartWalkInModal(booking: BookingItem) {
+    setStartWalkInModal({
+      bookingId: booking.id,
+      bookingCode: booking.code,
+      customerName: customerName(booking),
+    });
+    setBarberAvailability([]);
+    setSelectedStartBarberId("");
+    setLoadingBarberAvailability(true);
+    setError(null);
+
+    try {
+      const query = new URLSearchParams();
+      if (role === "SUPER_ADMIN") {
+        query.set("branchId", branchId);
+      }
+
+      const response = await authFetch(
+        `/api/bookings/admin/${booking.id}/barber-availability${
+          query.toString() ? `?${query.toString()}` : ""
+        }`,
+      );
+      const json = (await response.json()) as BarberAvailabilityResponse;
+
+      if (!response.ok || !json.availability) {
+        throw new Error(json.message ?? "Gagal memuat barber tersedia");
+      }
+
+      const availableBarbers = json.availability.barbermen;
+      setBarberAvailability(availableBarbers);
+      setSelectedStartBarberId(
+        availableBarbers.find((barber) => barber.isAvailable)?.id ?? "",
+      );
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal memuat barber tersedia",
+      );
+    } finally {
+      setLoadingBarberAvailability(false);
+    }
+  }
+
+  async function startAssignedWalkIn() {
+    if (!startWalkInModal || !selectedStartBarberId) {
+      setError("Pilih barber terlebih dahulu");
+      return;
+    }
+
+    const selectedBarber = barberAvailability.find(
+      (barber) => barber.id === selectedStartBarberId,
+    );
+    const confirmed = await confirmAction({
+      title: "Mulai walk-in?",
+      text: `${startWalkInModal.customerName} akan mulai dilayani oleh ${
+        selectedBarber?.name ?? "barber"
+      }.`,
+      confirmButtonText: "Ya, mulai",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setStartingWalkIn(true);
+      const updated = await updateStatus(startWalkInModal.bookingId, "IN_PROGRESS", {
+        barbermanId: selectedStartBarberId,
+        skipConfirm: true,
+      });
+      if (!updated) {
+        return;
+      }
+      setStartWalkInModal(null);
+      setBarberAvailability([]);
+      setSelectedStartBarberId("");
+    } finally {
+      setStartingWalkIn(false);
     }
   }
 
@@ -1223,7 +1419,6 @@ export default function ReservasiPage() {
         body: JSON.stringify({
           branchId: role === "SUPER_ADMIN" ? branchId : undefined,
           serviceId: walkInServiceId,
-          barbermanId: walkInBarberId || undefined,
           walkInName,
           walkInPhone: walkInPhone || undefined,
           scheduledStart: toDateTimeIso(date, walkInTime),
@@ -1281,7 +1476,10 @@ export default function ReservasiPage() {
 
           <button
             type="button"
-            onClick={() => setWalkInOpen(true)}
+            onClick={() => {
+              setWalkInTime(currentTimeInputValue());
+              setWalkInOpen(true);
+            }}
             className="bg-black text-white rounded-lg px-3 py-2 text-xs font-semibold"
           >
             Tambah Walk-in
@@ -1338,8 +1536,22 @@ export default function ReservasiPage() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4">
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2">
-            <div className="flex flex-wrap gap-2">
+          <div className="rounded-lg border border-gray-100 bg-white px-3 py-3 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Urutan Reservasi
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Diurutkan dari jam paling awal, gabungan walk-in dan reservasi.
+                </p>
+              </div>
+              <p className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                {filteredBookings.length} terlihat
+              </p>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
               {[
                 ["ALL", "Semua"],
                 ["UPCOMING", "Menunggu"],
@@ -1351,19 +1563,16 @@ export default function ReservasiPage() {
                   key={value}
                   type="button"
                   onClick={() => setReservationFilter(value as ReservationFilter)}
-                  className={`rounded-md px-3 py-1.5 text-xs font-semibold ${
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-colors ${
                     reservationFilter === value
                       ? "bg-black text-white"
-                      : "bg-gray-100 text-gray-700"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                   }`}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            <p className="text-xs text-gray-500">
-              {filteredBookings.length} reservasi terlihat
-            </p>
           </div>
 
           {loading && (
@@ -1379,11 +1588,11 @@ export default function ReservasiPage() {
           )}
 
           {!loading &&
-            filteredBookings.map((booking) => {
+            filteredBookings.map((booking, index) => {
               const payment = paymentLabel(booking);
               const steps = timelineSteps(booking);
-              const customerName =
-                booking.member?.fullName ?? booking.walkInName ?? "Walk-in";
+              const currentCustomerName = customerName(booking);
+              const bookingTime = formatBookingTime(booking.scheduledStart);
 
               return (
                 <article
@@ -1391,32 +1600,63 @@ export default function ReservasiPage() {
                   className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h3 className="text-sm font-bold text-gray-900">
-                          {customerName}
-                        </h3>
-                        <span
-                          className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${statusBadge(booking.status)}`}
-                        >
-                          {statusLabel(booking.status)}
-                        </span>
-                        <span
-                          className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${payment.tone}`}
-                        >
-                          {payment.label}
-                        </span>
-                        {booking.isWalkIn && (
-                          <span className="rounded-full bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-700">
-                            Walk-in
-                          </span>
-                        )}
+                    <div className="grid min-w-0 flex-1 grid-cols-[72px_minmax(0,1fr)] gap-3">
+                      <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                          #{index + 1}
+                        </p>
+                        <p className="mt-1 text-lg font-bold leading-none text-gray-950">
+                          {bookingTime}
+                        </p>
                       </div>
-                      <p className="mt-1 text-xs text-gray-500">
-                        {booking.code} ·{" "}
-                        {formatIndonesianDateTime(booking.scheduledStart)} ·{" "}
-                        {booking.barberman.name}
-                      </p>
+
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-bold text-gray-900">
+                            {currentCustomerName}
+                          </h3>
+                          <span
+                            className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${statusBadge(booking.status)}`}
+                          >
+                            {statusLabel(booking.status)}
+                          </span>
+                          <span
+                            className={`inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold ${bookingSourceTone(booking)}`}
+                          >
+                            {bookingSourceLabel(booking)}
+                          </span>
+                          <span
+                            className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${payment.tone}`}
+                          >
+                            {payment.label}
+                          </span>
+                          {isUnassignedWalkIn(booking) && (
+                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                              Belum assigned
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 grid grid-cols-1 gap-1 text-xs text-gray-500 sm:grid-cols-3">
+                          <p className="min-w-0 truncate">
+                            <span className="font-semibold text-gray-700">
+                              Kode:
+                            </span>{" "}
+                            {booking.code}
+                          </p>
+                          <p>
+                            <span className="font-semibold text-gray-700">
+                              Jam:
+                            </span>{" "}
+                            {formatIndonesianDateTime(booking.scheduledStart)}
+                          </p>
+                          <p className="min-w-0 truncate">
+                            <span className="font-semibold text-gray-700">
+                              Barber:
+                            </span>{" "}
+                            {barberName(booking)}
+                          </p>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -1425,7 +1665,9 @@ export default function ReservasiPage() {
                           <button
                             type="button"
                             onClick={() =>
-                              updateStatus(booking.id, "IN_PROGRESS")
+                              isUnassignedWalkIn(booking)
+                                ? void openStartWalkInModal(booking)
+                                : void updateStatus(booking.id, "IN_PROGRESS")
                             }
                             className="rounded-md bg-black px-3 py-2 text-[11px] font-semibold text-white"
                           >
@@ -1442,7 +1684,8 @@ export default function ReservasiPage() {
                       )}
 
                       {(booking.status === "UPCOMING" ||
-                        booking.status === "IN_PROGRESS") && (
+                        booking.status === "IN_PROGRESS") &&
+                        !isUnassignedWalkIn(booking) && (
                         <button
                           type="button"
                           onClick={() =>
@@ -1573,6 +1816,70 @@ export default function ReservasiPage() {
         </div>
 
         <aside className="space-y-3">
+          <div className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Status Barber
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Berdasarkan antrean hari ini.
+                </p>
+              </div>
+              <span className="rounded-full bg-gray-100 px-2 py-1 text-[11px] font-semibold text-gray-600">
+                {barberStatuses.length} barber
+              </span>
+            </div>
+
+            <div className="mt-3 space-y-2">
+              {barberStatuses.length === 0 && (
+                <p className="rounded-lg bg-gray-50 px-3 py-3 text-xs text-gray-500">
+                  Belum ada barber pada cabang ini.
+                </p>
+              )}
+
+              {barberStatuses.map((barber) => (
+                <div
+                  key={barber.id}
+                  className="rounded-lg border border-gray-100 bg-gray-50 p-3"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-bold text-gray-900">
+                        {barber.name}
+                      </p>
+                      <p className="mt-1 text-[11px] text-gray-500">
+                        {barber.queueCount} antrean aktif
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full border px-2 py-1 text-[11px] font-semibold ${barber.tone}`}
+                    >
+                      {barber.state}
+                    </span>
+                  </div>
+
+                  {barber.booking ? (
+                    <div className="mt-3 rounded-md bg-white px-3 py-2 text-xs text-gray-600">
+                      <p className="font-semibold text-gray-900">
+                        {formatBookingTime(barber.booking.scheduledStart)} ·{" "}
+                        {customerName(barber.booking)}
+                      </p>
+                      <p className="mt-1">
+                        {bookingSourceLabel(barber.booking)} ·{" "}
+                        {barber.booking.service.name}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-md bg-white px-3 py-2 text-xs text-emerald-700">
+                      Siap menerima reservasi atau walk-in berikutnya.
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="rounded-lg border border-blue-100 bg-blue-50 p-4">
             <h3 className="text-sm font-bold text-blue-950">Alur Admin</h3>
             <ol className="mt-3 space-y-2 text-xs text-blue-950">
@@ -1652,22 +1959,6 @@ export default function ReservasiPage() {
             </label>
 
             <label className="block">
-              <span className="text-xs text-gray-500">Barber (opsional)</span>
-              <select
-                value={walkInBarberId}
-                onChange={(event) => setWalkInBarberId(event.target.value)}
-                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
-              >
-                <option value="">Siapa saja</option>
-                {selectedBranch.barbermen.map((barber) => (
-                  <option key={barber.id} value={barber.id}>
-                    {barber.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
               <span className="text-xs text-gray-500">Jam</span>
               <input
                 type="time"
@@ -1692,6 +1983,98 @@ export default function ReservasiPage() {
                 className="flex-1 bg-black text-white rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
               >
                 {submittingWalkIn ? "Memproses..." : "Tambahkan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {startWalkInModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Assign Barber
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  {startWalkInModal.customerName} ·{" "}
+                  {startWalkInModal.bookingCode}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStartWalkInModal(null)}
+                className="text-xs text-gray-500"
+              >
+                Tutup
+              </button>
+            </div>
+
+            {loadingBarberAvailability ? (
+              <div className="rounded-lg border border-gray-100 bg-gray-50 px-3 py-6 text-center text-xs text-gray-500">
+                Memuat barber tersedia...
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {barberAvailability.map((barber) => (
+                  <label
+                    key={barber.id}
+                    className={`flex items-start gap-3 rounded-lg border px-3 py-3 text-xs ${
+                      barber.isAvailable
+                        ? "cursor-pointer border-gray-200 bg-white"
+                        : "border-gray-100 bg-gray-50 opacity-70"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="start-barber"
+                      value={barber.id}
+                      checked={selectedStartBarberId === barber.id}
+                      disabled={!barber.isAvailable}
+                      onChange={() => setSelectedStartBarberId(barber.id)}
+                      className="mt-1"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-semibold text-gray-900">
+                        {barber.name}
+                      </span>
+                      <span
+                        className={`mt-1 block ${
+                          barber.isAvailable
+                            ? "text-emerald-700"
+                            : "text-red-700"
+                        }`}
+                      >
+                        {barber.isAvailable
+                          ? "Tersedia untuk mulai sekarang"
+                          : (barber.reason ?? "Tidak tersedia")}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setStartWalkInModal(null)}
+                className="flex-1 border border-gray-300 rounded-lg py-2 text-xs font-semibold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={startAssignedWalkIn}
+                disabled={
+                  startingWalkIn ||
+                  loadingBarberAvailability ||
+                  !selectedStartBarberId
+                }
+                className="flex-1 bg-black text-white rounded-lg py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                {startingWalkIn ? "Memulai..." : "Mulai Layanan"}
               </button>
             </div>
           </div>

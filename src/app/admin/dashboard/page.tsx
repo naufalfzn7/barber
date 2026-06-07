@@ -32,7 +32,7 @@ type BookingItem = {
   isWalkIn: boolean;
   walkInName?: string | null;
   service: { id: string; name: string; price: number };
-  barberman: { id: string; name: string };
+  barberman: { id: string; name: string } | null;
   member: { fullName: string } | null;
 };
 
@@ -233,7 +233,7 @@ export default function DashboardPage() {
 
     return barbermen.slice(0, 6).map((barberman) => {
       const barberBookings = bookings.filter(
-        (booking) => booking.barberman.id === barberman.id,
+        (booking) => booking.barberman?.id === barberman.id,
       );
       const currentBooking = barberBookings.find(
         (booking) => booking.status === "IN_PROGRESS",
@@ -422,7 +422,8 @@ export default function DashboardPage() {
                             "Walk-in"}
                         </p>
                         <p className="text-xs text-gray-400 truncate">
-                          {booking.service.name} · {booking.barberman.name}
+                          {booking.service.name} ·{" "}
+                          {booking.barberman?.name ?? "Belum assigned"}
                         </p>
                       </div>
                     </div>

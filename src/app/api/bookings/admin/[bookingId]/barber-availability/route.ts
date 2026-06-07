@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireRole } from "@/server/policies/requireRole";
 import { bookingService } from "@/server/services/bookingService";
-import { revalidateBookingData } from "@/server/core/revalidate";
 
 function resolveBranchId(
   auth: { role: "MEMBER" | "ADMIN" | "SUPER_ADMIN"; branchId?: string | null },
@@ -41,7 +40,7 @@ function resolveBranchId(
   return { branchId: requestedBranchId };
 }
 
-export async function PATCH(
+export async function GET(
   request: NextRequest,
   context: { params: Promise<{ bookingId: string }> },
 ) {
@@ -52,47 +51,21 @@ export async function PATCH(
 
   try {
     const { bookingId } = await context.params;
-    const body = (await request.json()) as {
-      status?: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW";
-      branchId?: string;
-      barbermanId?: string;
-      reason?: string;
-    };
-
-    if (!body.status) {
-      return NextResponse.json(
-        { message: "status is required" },
-        { status: 400 },
-      );
-    }
-
-    const scope = resolveBranchId(auth, body.branchId ?? null);
+    const branchId = request.nextUrl.searchParams.get("branchId");
+    const scope = resolveBranchId(auth, branchId);
     if (scope.error) {
       return scope.error;
     }
 
-    const booking = await bookingService.updateBookingStatus({
+    const availability = await bookingService.getWalkInStartAvailability({
       bookingId,
-      changedById: auth.sub,
       branchId: scope.branchId!,
-      newStatus: body.status,
-      barbermanId: body.barbermanId,
-      reason: body.reason,
     });
-    revalidateBookingData();
 
-    return NextResponse.json(
-      {
-        message: "Booking status updated",
-        booking,
-      },
-      { status: 200 },
-    );
+    return NextResponse.json({ availability }, { status: 200 });
   } catch (error) {
     const message =
-      error instanceof Error
-        ? error.message
-        : "Failed to update booking status";
+      error instanceof Error ? error.message : "Failed to load barber availability";
     return NextResponse.json({ message }, { status: 400 });
   }
 }

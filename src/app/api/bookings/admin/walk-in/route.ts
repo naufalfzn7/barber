@@ -52,7 +52,6 @@ export async function POST(request: NextRequest) {
       branchId?: string;
       serviceId?: string;
       scheduledStart?: string;
-      barbermanId?: string;
       walkInName?: string;
       walkInPhone?: string;
       notes?: string;
@@ -75,7 +74,6 @@ export async function POST(request: NextRequest) {
       branchId: scope.branchId!,
       serviceId: body.serviceId,
       scheduledStart: body.scheduledStart,
-      barbermanId: body.barbermanId,
       walkInName: body.walkInName,
       walkInPhone: body.walkInPhone,
       notes: body.notes,

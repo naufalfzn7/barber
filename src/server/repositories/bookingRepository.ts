@@ -225,7 +225,13 @@ export const bookingRepository = {
       where: { memberId },
       include: {
         service: {
-          select: { id: true, name: true, durationMinutes: true, price: true },
+          select: {
+            id: true,
+            name: true,
+            durationMinutes: true,
+            bufferMinutes: true,
+            price: true,
+          },
         },
         barberman: { select: { id: true, name: true } },
         branch: { select: { id: true, code: true, name: true } },
@@ -258,7 +264,13 @@ export const bookingRepository = {
       },
       include: {
         service: {
-          select: { id: true, name: true, durationMinutes: true, price: true },
+          select: {
+            id: true,
+            name: true,
+            durationMinutes: true,
+            bufferMinutes: true,
+            price: true,
+          },
         },
         barberman: { select: { id: true, name: true } },
         member: {
@@ -299,7 +311,6 @@ export const bookingRepository = {
     code: string;
     branchId: string;
     createdById: string;
-    barbermanId: string;
     serviceId: string;
     scheduledStart: Date;
     scheduledEnd: Date;
@@ -315,7 +326,7 @@ export const bookingRepository = {
             branchId: input.branchId,
             memberId: null,
             createdById: input.createdById,
-            barbermanId: input.barbermanId,
+            barbermanId: null,
             serviceId: input.serviceId,
             scheduledStart: input.scheduledStart,
             scheduledEnd: input.scheduledEnd,
@@ -348,7 +359,13 @@ export const bookingRepository = {
       where: { id: bookingId },
       include: {
         service: {
-          select: { id: true, name: true, durationMinutes: true, price: true },
+          select: {
+            id: true,
+            name: true,
+            durationMinutes: true,
+            bufferMinutes: true,
+            price: true,
+          },
         },
         barberman: { select: { id: true, name: true } },
         member: {
@@ -595,6 +612,8 @@ export const bookingRepository = {
     changedById: string;
     newStatus: BookingStatus;
     reason?: string;
+    barbermanId?: string;
+    scheduledEnd?: Date;
     checkInAt?: Date;
     serviceStartAt?: Date;
     serviceEndAt?: Date;
@@ -609,10 +628,34 @@ export const bookingRepository = {
         return null;
       }
 
+      if (
+        input.newStatus === BookingStatus.IN_PROGRESS &&
+        input.barbermanId &&
+        input.scheduledEnd
+      ) {
+        const overlaps = await tx.booking.findFirst({
+          where: {
+            id: { not: input.bookingId },
+            branchId: current.branchId,
+            barbermanId: input.barbermanId,
+            ...activeBookingWhere(),
+            scheduledStart: { lt: input.scheduledEnd },
+            scheduledEnd: { gt: input.serviceStartAt ?? new Date() },
+          },
+          select: { id: true },
+        });
+
+        if (overlaps) {
+          throw new Error("Barber sedang ada booking di jam tersebut");
+        }
+      }
+
       const booking = await tx.booking.update({
         where: { id: input.bookingId },
         data: {
           status: input.newStatus,
+          barbermanId: input.barbermanId,
+          scheduledEnd: input.scheduledEnd,
           checkInAt: input.checkInAt,
           serviceStartAt: input.serviceStartAt,
           serviceEndAt: input.serviceEndAt,

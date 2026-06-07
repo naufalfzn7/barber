@@ -26,7 +26,7 @@ type BookingItem = {
     | "NO_SHOW";
   scheduledStart: string;
   service: { id: string; name: string; price: number };
-  barberman: { id: string; name: string };
+  barberman: { id: string; name: string } | null;
   member: { fullName: string } | null;
   isWalkIn: boolean;
   walkInName?: string | null;
@@ -397,7 +397,7 @@ export default function KeuanganPage() {
                           </td>
                           <td className="px-5 py-3.5 hidden lg:table-cell">
                             <p className="text-xs text-gray-600">
-                              {booking.barberman.name}
+                              {booking.barberman?.name ?? "Belum assigned"}
                             </p>
                           </td>
                           <td className="px-5 py-3.5">

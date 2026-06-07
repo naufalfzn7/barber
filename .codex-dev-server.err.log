@@ -1,0 +1,77 @@
+(node:8180) Warning: SECURITY WARNING: The SSL modes 'prefer', 'require', and 'verify-ca' are treated as aliases for 'verify-full'.
+In the next major version (pg-connection-string v3.0.0 and pg v9.0.0), these modes will adopt standard libpq semantics, which have weaker security guarantees.
+
+To prepare for this change:
+- If you want the current behavior, explicitly use 'sslmode=verify-full'
+- If you want libpq compatibility now, use 'uselibpqcompat=true&sslmode=require'
+
+See https://www.postgresql.org/docs/current/libpq-ssl.html for libpq SSL mode definitions.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Uncaught ReferenceError: walkInBarberId is not defined
+    at ReservasiPage (src/app/admin/reservasi/page.tsx:529:40)
+  527 |       setWalkInBarberId("");
+  528 |     }
+> 529 |   }, [selectedBranch, walkInServiceId, walkInBarberId]);
+      |                                        ^
+  530 |
+  531 |   useEffect(() => {
+  532 |     async function loadProductCatalog() {
+[browser] Uncaught ReferenceError: walkInBarberId is not defined
+    at ReservasiPage (src/app/admin/reservasi/page.tsx:529:40)
+  527 |       setWalkInBarberId("");
+  528 |     }
+> 529 |   }, [selectedBranch, walkInServiceId, walkInBarberId]);
+      |                                        ^
+  530 |
+  531 |   useEffect(() => {
+  532 |     async function loadProductCatalog() {
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+⚠ Fast Refresh had to perform a full reload due to a runtime error.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] THREE.THREE.Clock: This module has been deprecated. Please use THREE.Timer instead.
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] Uncaught Error: The operation failed but a more specific error is not available (code: 1)
+    at Array.forEach (<anonymous>)
+    at Map.forEach (<anonymous>)
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior
+[browser] Detected `scroll-behavior: smooth` on the `<html>` element. To disable smooth scrolling during route transitions, add `data-scroll-behavior="smooth"` to your <html> element. Learn more: https://nextjs.org/docs/messages/missing-data-scroll-behavior

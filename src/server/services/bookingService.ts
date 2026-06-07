@@ -39,7 +39,6 @@ type CreateWalkInBookingInput = {
   branchId: string;
   serviceId: string;
   scheduledStart: string;
-  barbermanId?: string;
   walkInName: string;
   walkInPhone?: string;
   notes?: string;
@@ -50,7 +49,13 @@ type UpdateBookingStatusInput = {
   changedById: string;
   branchId: string;
   newStatus: "IN_PROGRESS" | "COMPLETED" | "NO_SHOW";
+  barbermanId?: string;
   reason?: string;
+};
+
+type StartAvailabilityInput = {
+  bookingId: string;
+  branchId: string;
 };
 
 type AddBookingProductInput = {
@@ -907,6 +912,130 @@ export const bookingService = {
     }));
   },
 
+  async getWalkInStartAvailability(input: StartAvailabilityInput) {
+    const booking = await bookingRepository.findBookingById(input.bookingId);
+    if (!booking) {
+      throw new Error("Booking not found");
+    }
+
+    if (booking.branchId !== input.branchId) {
+      throw new Error("Booking is outside your branch scope");
+    }
+
+    if (!booking.isWalkIn || booking.status !== "UPCOMING") {
+      throw new Error("Availability is only available for waiting walk-in");
+    }
+
+    const serviceStart = new Date();
+    const serviceTotalMinutes =
+      booking.service.durationMinutes + (booking.service.bufferMinutes ?? 0);
+    const serviceEnd = new Date(
+      serviceStart.getTime() + serviceTotalMinutes * 60 * 1000,
+    );
+    const dayWindow = getBusinessDayWindow(serviceStart);
+    const slotStartMinutes = getBusinessMinutes(serviceStart);
+    const slotEndMinutes = slotStartMinutes + serviceTotalMinutes;
+    const dayOfWeek = dayOfWeekFromDateParts(dayWindow.parts);
+
+    const [branch, operatingHour, barbermen, holidays, schedules] =
+      await Promise.all([
+        bookingRepository.findBranchById(input.branchId),
+        bookingRepository.findOperatingHour(input.branchId, dayOfWeek),
+        bookingRepository.findBarbermen(input.branchId),
+        bookingRepository.findHolidays(
+          input.branchId,
+          dayWindow.start,
+          dayWindow.end,
+        ),
+        bookingRepository.findBarberSchedules(
+          input.branchId,
+          dayWindow.start,
+          dayWindow.end,
+        ),
+      ]);
+
+    if (!branch || !branch.isActive || !operatingHour || operatingHour.isClosed) {
+      return {
+        serviceStart,
+        serviceEnd,
+        barbermen: barbermen.map((barber) => ({
+          id: barber.id,
+          name: barber.name,
+          isAvailable: false,
+          reason: "Cabang tutup atau tidak aktif",
+        })),
+      };
+    }
+
+    const defaultOpenMinutes = parseTimeToMinutes(operatingHour.openTime);
+    const defaultCloseMinutes = parseTimeToMinutes(operatingHour.closeTime);
+
+    const barberAvailability = await Promise.all(
+      barbermen.map(async (barber) => {
+        const blockedByHoliday = holidays.some((holiday) =>
+          holidayBlocksSlot(
+            holiday,
+            barber.id,
+            slotStartMinutes,
+            slotEndMinutes,
+          ),
+        );
+
+        if (blockedByHoliday) {
+          return {
+            id: barber.id,
+            name: barber.name,
+            isAvailable: false,
+            reason: "Hari libur",
+          };
+        }
+
+        const barberSchedule = schedules.find(
+          (schedule) => schedule.barbermanId === barber.id,
+        );
+
+        if (
+          !scheduleAllowsSlot({
+            schedule: barberSchedule,
+            defaultOpenMinutes,
+            defaultCloseMinutes,
+            slotStartMinutes,
+            slotEndMinutes,
+          })
+        ) {
+          return {
+            id: barber.id,
+            name: barber.name,
+            isAvailable: false,
+            reason: "Diluar jam kerja",
+          };
+        }
+
+        const overlaps = await bookingRepository.findOverlappingBookings({
+          branchId: input.branchId,
+          barbermanId: barber.id,
+          scheduledStart: serviceStart,
+          scheduledEnd: serviceEnd,
+        });
+
+        const blocks = overlaps.some((item) => item.id !== input.bookingId);
+
+        return {
+          id: barber.id,
+          name: barber.name,
+          isAvailable: !blocks,
+          reason: blocks ? "Ada booking aktif di jam ini" : null,
+        };
+      }),
+    );
+
+    return {
+      serviceStart,
+      serviceEnd,
+      barbermen: barberAvailability,
+    };
+  },
+
   async addBookingProduct(input: AddBookingProductInput) {
     if (!input.inventoryItemId) {
       throw new Error("inventoryItemId is required");
@@ -928,6 +1057,10 @@ export const bookingService = {
 
     if (booking.status !== "UPCOMING" && booking.status !== "IN_PROGRESS") {
       throw new Error("Products can only be changed for UPCOMING/IN_PROGRESS");
+    }
+
+    if (booking.isWalkIn && !booking.barbermanId) {
+      throw new Error("Produk hanya bisa ditambahkan setelah walk-in dimulai");
     }
 
     const result = await bookingRepository.addProductToBooking({
@@ -967,6 +1100,10 @@ export const bookingService = {
       throw new Error("Products can only be changed for UPCOMING/IN_PROGRESS");
     }
 
+    if (booking.isWalkIn && !booking.barbermanId) {
+      throw new Error("Produk hanya bisa diubah setelah walk-in dimulai");
+    }
+
     const result = await bookingRepository.removeBookingProduct({
       bookingId: input.bookingId,
       bookingProductId: input.bookingProductId,
@@ -1002,20 +1139,6 @@ export const bookingService = {
       throw new Error("Service does not belong to selected branch");
     }
 
-    const serviceTotalMinutes = service.durationMinutes + service.bufferMinutes;
-    const scheduledEnd = new Date(
-      scheduledStart.getTime() + serviceTotalMinutes * 60 * 1000,
-    );
-
-    const barbermen = await bookingRepository.findBarbermen(
-      input.branchId,
-      input.barbermanId,
-    );
-
-    if (!barbermen.length) {
-      throw new Error("No active barberman available");
-    }
-
     const dayWindow = getBusinessDayWindow(scheduledStart);
     const dayOfWeek = dayOfWeekFromDateParts(dayWindow.parts);
     const operatingHour = await bookingRepository.findOperatingHour(
@@ -1026,76 +1149,66 @@ export const bookingService = {
       throw new Error("Selected slot is not available");
     }
 
-    const holidays = await bookingRepository.findHolidays(
-      input.branchId,
-      dayWindow.start,
-      dayWindow.end,
-      input.barbermanId,
-    );
-    const schedules = await bookingRepository.findBarberSchedules(
-      input.branchId,
-      dayWindow.start,
-      dayWindow.end,
-    );
-
     const slotStartMinutes = getBusinessMinutes(scheduledStart);
-    const slotEndMinutes =
-      slotStartMinutes + service.durationMinutes + service.bufferMinutes;
+    const serviceTotalMinutes = service.durationMinutes + service.bufferMinutes;
+    const slotEndMinutes = slotStartMinutes + serviceTotalMinutes;
     const defaultOpenMinutes = parseTimeToMinutes(operatingHour.openTime);
     const defaultCloseMinutes = parseTimeToMinutes(operatingHour.closeTime);
 
-    let selectedBarberId: string | null = null;
+    if (
+      slotStartMinutes < defaultOpenMinutes ||
+      slotEndMinutes > defaultCloseMinutes
+    ) {
+      throw new Error("Selected slot is not available");
+    }
 
-    for (const barber of barbermen) {
+    const [barbermen, holidays, schedules] = await Promise.all([
+      bookingRepository.findBarbermen(input.branchId),
+      bookingRepository.findHolidays(
+        input.branchId,
+        dayWindow.start,
+        dayWindow.end,
+      ),
+      bookingRepository.findBarberSchedules(
+        input.branchId,
+        dayWindow.start,
+        dayWindow.end,
+      ),
+    ]);
+
+    const hasAvailableBarber = barbermen.some((barber) => {
       const blockedByHoliday = holidays.some((holiday) =>
         holidayBlocksSlot(holiday, barber.id, slotStartMinutes, slotEndMinutes),
       );
 
       if (blockedByHoliday) {
-        continue;
+        return false;
       }
 
       const barberSchedule = schedules.find(
         (schedule) => schedule.barbermanId === barber.id,
       );
 
-      if (
-        !scheduleAllowsSlot({
-          schedule: barberSchedule,
-          defaultOpenMinutes,
-          defaultCloseMinutes,
-          slotStartMinutes,
-          slotEndMinutes,
-        })
-      ) {
-        continue;
-      }
-
-      const overlaps = await bookingRepository.findOverlappingBookings({
-        branchId: input.branchId,
-        barbermanId: barber.id,
-        scheduledStart,
-        scheduledEnd,
+      return scheduleAllowsSlot({
+        schedule: barberSchedule,
+        defaultOpenMinutes,
+        defaultCloseMinutes,
+        slotStartMinutes,
+        slotEndMinutes,
       });
+    });
 
-      if (overlaps.length === 0) {
-        selectedBarberId = barber.id;
-        break;
-      }
-    }
-
-    if (!selectedBarberId) {
-      throw new Error("Selected slot is no longer available");
+    if (!hasAvailableBarber) {
+      throw new Error("Semua barber diluar jam kerja pada jam walk-in ini");
     }
 
     return bookingRepository.createWalkInBookingWithHistory({
       code: bookingCode(),
       branchId: input.branchId,
       createdById: input.createdById,
-      barbermanId: selectedBarberId,
       serviceId: input.serviceId,
       scheduledStart,
-      scheduledEnd,
+      scheduledEnd: scheduledStart,
       walkInName: input.walkInName.trim(),
       walkInPhone: input.walkInPhone,
       notes: input.notes,
@@ -1128,18 +1241,58 @@ export const bookingService = {
     }
 
     const now = new Date();
+    let barbermanId: string | undefined;
+    let scheduledEnd: Date | undefined;
+    let serviceStartAt = now;
+
+    if (input.newStatus === "IN_PROGRESS") {
+      if (booking.isWalkIn && !booking.barbermanId) {
+        if (!input.barbermanId) {
+          throw new Error("Pilih barber terlebih dahulu");
+        }
+
+        const availability = await bookingService.getWalkInStartAvailability({
+          bookingId: input.bookingId,
+          branchId: input.branchId,
+        });
+        const selectedBarber = availability.barbermen.find(
+          (barber) => barber.id === input.barbermanId,
+        );
+
+        if (!selectedBarber) {
+          throw new Error("Barber tidak tersedia untuk cabang ini");
+        }
+
+        if (!selectedBarber.isAvailable) {
+          throw new Error(
+            selectedBarber.reason
+              ? `Barber tidak tersedia: ${selectedBarber.reason}`
+              : "Barber tidak tersedia",
+          );
+        }
+
+        barbermanId = input.barbermanId;
+        serviceStartAt = availability.serviceStart;
+        scheduledEnd = availability.serviceEnd;
+      } else if (!booking.barbermanId) {
+        throw new Error("Booking belum memiliki barber");
+      }
+    }
+
     const updated = await bookingRepository.updateBookingStatusWithHistory({
       bookingId: input.bookingId,
       changedById: input.changedById,
       newStatus: input.newStatus,
       reason: input.reason,
+      barbermanId,
+      scheduledEnd,
       checkInAt:
         input.newStatus === "IN_PROGRESS"
-          ? now
+          ? serviceStartAt
           : (booking.checkInAt ?? undefined),
       serviceStartAt:
         input.newStatus === "IN_PROGRESS"
-          ? now
+          ? serviceStartAt
           : (booking.serviceStartAt ?? undefined),
       serviceEndAt:
         input.newStatus === "COMPLETED"
