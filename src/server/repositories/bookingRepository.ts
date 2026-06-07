@@ -1,4 +1,5 @@
 import {
+  BookingQueueStatus,
   BookingStatus,
   InventoryMovementType,
   Prisma,
@@ -15,6 +16,8 @@ const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
   BookingStatus.UPCOMING,
   BookingStatus.IN_PROGRESS,
 ];
+const BUSINESS_UTC_OFFSET_MINUTES = 7 * 60;
+const QUEUE_NO_SHOW_MINUTES = 10;
 
 function activeBookingWhere(now = new Date()): Prisma.BookingWhereInput {
   return {
@@ -28,7 +31,104 @@ function activeBookingWhere(now = new Date()): Prisma.BookingWhereInput {
   };
 }
 
+export function getBookingQueueDate(date: Date) {
+  const shifted = new Date(
+    date.getTime() + BUSINESS_UTC_OFFSET_MINUTES * 60 * 1000,
+  );
+  return new Date(
+    Date.UTC(
+      shifted.getUTCFullYear(),
+      shifted.getUTCMonth(),
+      shifted.getUTCDate(),
+      -BUSINESS_UTC_OFFSET_MINUTES / 60,
+      0,
+      0,
+      0,
+    ),
+  );
+}
+
+async function assignQueueTicket(
+  tx: Prisma.TransactionClient,
+  bookingId: string,
+) {
+  const current = await tx.booking.findUnique({ where: { id: bookingId } });
+  if (!current) {
+    return null;
+  }
+
+  if (current.queueNumber && current.queueDate) {
+    return current;
+  }
+
+  const queueDate = getBookingQueueDate(current.scheduledStart);
+  const latest = await tx.booking.findFirst({
+    where: {
+      branchId: current.branchId,
+      queueDate,
+      queueNumber: { not: null },
+    },
+    orderBy: { queueNumber: "desc" },
+    select: { queueNumber: true },
+  });
+  const queueNumber = (latest?.queueNumber ?? 0) + 1;
+
+  return tx.booking.update({
+    where: { id: bookingId },
+    data: {
+      queueDate,
+      queueNumber,
+      queueStatus: BookingQueueStatus.WAITING,
+      queueAssignedAt: new Date(),
+    },
+  });
+}
+
 export const bookingRepository = {
+  assignQueueTicket(bookingId: string) {
+    return prisma.$transaction(
+      async (tx) => assignQueueTicket(tx, bookingId),
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  },
+
+  assignMissingQueueTicketsForDay(input: {
+    branchId: string;
+    dateStart: Date;
+    dateEnd: Date;
+  }) {
+    return prisma.$transaction(
+      async (tx) => {
+        const candidates = await tx.booking.findMany({
+          where: {
+            branchId: input.branchId,
+            queueNumber: null,
+            status: {
+              in: [BookingStatus.UPCOMING, BookingStatus.IN_PROGRESS],
+            },
+            OR: [
+              { isWalkIn: true },
+              { payment: { status: PaymentStatus.PAID } },
+            ],
+            scheduledStart: {
+              gte: input.dateStart,
+              lt: input.dateEnd,
+            },
+          },
+          select: { id: true },
+          orderBy: [{ scheduledStart: "asc" }, { createdAt: "asc" }],
+        });
+
+        for (const booking of candidates) {
+          await assignQueueTicket(tx, booking.id);
+        }
+
+        return candidates.length;
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+  },
+
   listActiveBranches() {
     return prisma.branch.findMany({
       where: { isActive: true },
@@ -251,6 +351,7 @@ export const bookingRepository = {
     return prisma.booking.findMany({
       where: {
         branchId,
+        OR: [{ isWalkIn: true }, { payment: { status: PaymentStatus.PAID } }],
         scheduledStart: {
           gte: dateStart,
           lt: dateEnd,
@@ -292,6 +393,111 @@ export const bookingRepository = {
         },
       },
       orderBy: { scheduledStart: "asc" },
+    });
+  },
+
+  markExpiredCalledQueues(input: {
+    branchId: string;
+    queueDate: Date;
+    changedById?: string | null;
+  }) {
+    return prisma.$transaction(async (tx) => {
+      const now = new Date();
+      const cutoff = new Date(now.getTime() - QUEUE_NO_SHOW_MINUTES * 60 * 1000);
+      const expired = await tx.booking.findMany({
+        where: {
+          branchId: input.branchId,
+          queueDate: input.queueDate,
+          status: BookingStatus.UPCOMING,
+          queueStatus: BookingQueueStatus.CALLED,
+          queueCalledAt: { lte: cutoff },
+        },
+        select: { id: true, status: true },
+      });
+
+      if (expired.length === 0) {
+        return 0;
+      }
+
+      await tx.booking.updateMany({
+        where: { id: { in: expired.map((booking) => booking.id) } },
+        data: {
+          status: BookingStatus.NO_SHOW,
+          queueStatus: BookingQueueStatus.MISSED,
+          queueNoShowAt: now,
+        },
+      });
+
+      await tx.bookingStatusHistory.createMany({
+        data: expired.map((booking) => ({
+          bookingId: booking.id,
+          oldStatus: booking.status,
+          newStatus: BookingStatus.NO_SHOW,
+          changedById: input.changedById ?? null,
+          reason: `Auto no-show after ${QUEUE_NO_SHOW_MINUTES} minutes in queue call`,
+        })),
+      });
+
+      return expired.length;
+    });
+  },
+
+  callNextQueueBooking(input: {
+    branchId: string;
+    queueDate: Date;
+    changedById: string;
+  }) {
+    return prisma.$transaction(async (tx) => {
+      const activeCalled = await tx.booking.findFirst({
+        where: {
+          branchId: input.branchId,
+          queueDate: input.queueDate,
+          status: BookingStatus.UPCOMING,
+          queueStatus: BookingQueueStatus.CALLED,
+        },
+        orderBy: [{ queueCalledAt: "asc" }, { queueNumber: "asc" }],
+        include: {
+          service: { select: { id: true, name: true, price: true } },
+          barberman: { select: { id: true, name: true } },
+          member: { select: { id: true, fullName: true, email: true } },
+        },
+      });
+
+      if (activeCalled) {
+        return activeCalled;
+      }
+
+      const next = await tx.booking.findFirst({
+        where: {
+          branchId: input.branchId,
+          queueDate: input.queueDate,
+          status: BookingStatus.UPCOMING,
+          queueStatus: BookingQueueStatus.WAITING,
+        },
+        orderBy: [{ scheduledStart: "asc" }, { queueNumber: "asc" }],
+        include: {
+          service: { select: { id: true, name: true, price: true } },
+          barberman: { select: { id: true, name: true } },
+          member: { select: { id: true, fullName: true, email: true } },
+        },
+      });
+
+      if (!next) {
+        return null;
+      }
+
+      return tx.booking.update({
+        where: { id: next.id },
+        data: {
+          queueStatus: BookingQueueStatus.CALLED,
+          queueCalledAt: new Date(),
+        },
+        include: {
+          service: { select: { id: true, name: true, price: true } },
+          barberman: { select: { id: true, name: true } },
+          member: { select: { id: true, fullName: true, email: true } },
+        },
+      });
     });
   },
 
@@ -337,7 +543,7 @@ export const bookingRepository = {
           },
         });
 
-        return booking;
+        return (await assignQueueTicket(tx, booking.id)) ?? booking;
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
@@ -617,6 +823,16 @@ export const bookingRepository = {
           serviceStartAt: input.serviceStartAt,
           serviceEndAt: input.serviceEndAt,
           completedAt: input.completedAt,
+          queueStatus:
+            input.newStatus === BookingStatus.IN_PROGRESS
+              ? BookingQueueStatus.SERVING
+              : input.newStatus === BookingStatus.COMPLETED
+                ? BookingQueueStatus.DONE
+                : input.newStatus === BookingStatus.NO_SHOW
+                  ? BookingQueueStatus.MISSED
+                  : undefined,
+          queueNoShowAt:
+            input.newStatus === BookingStatus.NO_SHOW ? new Date() : undefined,
         },
       });
 

@@ -32,6 +32,14 @@ type BookingItem = {
     | "NO_SHOW";
   scheduledStart: string;
   isWalkIn: boolean;
+  queue?: {
+    number: number;
+    label: string | null;
+    status: "WAITING" | "CALLED" | "SERVING" | "DONE" | "MISSED" | null;
+    assignedAt: string | null;
+    calledAt: string | null;
+    noShowAt: string | null;
+  } | null;
   walkInName?: string | null;
   service: { id: string; name: string; price: number };
   products: Array<{
@@ -79,6 +87,13 @@ type DashboardResponse = {
     paymentPending: number;
     canceled?: number;
     noShow?: number;
+  };
+  queueSummary?: {
+    waiting: number;
+    called: number;
+    serving: number;
+    done: number;
+    missed: number;
   };
   bookings: BookingItem[];
 };
@@ -223,6 +238,64 @@ function statusLabel(status: BookingItem["status"]) {
   return map[status];
 }
 
+function sourceTone(booking: BookingItem) {
+  return booking.isWalkIn
+    ? {
+        label: "Walk-in",
+        badge: "bg-amber-100 text-amber-800",
+        card: "border-l-4 border-l-amber-400 bg-amber-50/35",
+      }
+    : {
+        label: "Reservasi online",
+        badge: "bg-sky-100 text-sky-800",
+        card: "border-l-4 border-l-sky-400 bg-sky-50/30",
+      };
+}
+
+function queueTone(status: BookingItem["queue"] extends { status: infer Status } ? Status : string | null | undefined) {
+  const map: Record<string, string> = {
+    WAITING: "bg-blue-50 text-blue-700",
+    CALLED: "bg-indigo-600 text-white",
+    SERVING: "bg-amber-100 text-amber-800",
+    DONE: "bg-emerald-100 text-emerald-800",
+    MISSED: "bg-red-100 text-red-800",
+  };
+
+  return status ? (map[String(status)] ?? "bg-gray-100 text-gray-700") : "";
+}
+
+function queueLabel(status: BookingItem["queue"] extends { status: infer Status } ? Status : string | null | undefined) {
+  const map: Record<string, string> = {
+    WAITING: "Menunggu",
+    CALLED: "Dipanggil",
+    SERVING: "Dilayani",
+    DONE: "Selesai",
+    MISSED: "Lewat / no-show",
+  };
+
+  return status ? (map[String(status)] ?? "-") : "-";
+}
+
+function cardStateTone(booking: BookingItem) {
+  if (booking.queue?.status === "CALLED") {
+    return "border-indigo-300 bg-indigo-50 shadow-md";
+  }
+
+  if (booking.status === "IN_PROGRESS") {
+    return "border-amber-200 bg-amber-50/60";
+  }
+
+  if (booking.status === "NO_SHOW" || booking.queue?.status === "MISSED") {
+    return "border-red-200 bg-red-50/50";
+  }
+
+  if (booking.status === "COMPLETED") {
+    return "border-emerald-200 bg-emerald-50/45";
+  }
+
+  return sourceTone(booking).card;
+}
+
 function paymentLabel(booking: BookingItem) {
   if (!booking.payment) {
     return {
@@ -319,6 +392,7 @@ export default function ReservasiPage() {
     useState<PaymentSuccessState | null>(null);
   const [reservationFilter, setReservationFilter] =
     useState<ReservationFilter>("ALL");
+  const [callingQueue, setCallingQueue] = useState(false);
 
   const qrisModalOpen = qrisModalVisible && qrisModal !== null;
   const qrisBookingId = qrisModal?.bookingId ?? null;
@@ -408,6 +482,14 @@ export default function ReservasiPage() {
         new Date(second.scheduledStart).getTime(),
     );
   }, [data?.bookings, reservationFilter]);
+
+  const activeQueueBooking = useMemo(
+    () =>
+      (data?.bookings ?? []).find(
+        (booking) => booking.queue?.status === "CALLED",
+      ) ?? null,
+    [data?.bookings],
+  );
 
   useEffect(() => {
     if (!selectedBranch) {
@@ -503,6 +585,53 @@ export default function ReservasiPage() {
       setLoading(false);
     }
   }, [branchId, date, role]);
+
+  async function callNextQueue() {
+    if (!branchId || !date) {
+      setError("Pilih cabang dan tanggal terlebih dahulu");
+      return;
+    }
+
+    try {
+      setCallingQueue(true);
+      setError(null);
+      setMessage(null);
+
+      const response = await authFetch("/api/bookings/admin/queue/call-next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId: role === "SUPER_ADMIN" ? branchId : undefined,
+          date,
+        }),
+      });
+      const json = (await response.json()) as {
+        message?: string;
+        booking?: {
+          queue?: { label: string | null };
+          customerName?: string;
+        } | null;
+      };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal memanggil antrian");
+      }
+
+      if (json.booking?.queue?.label) {
+        setMessage(
+          `Memanggil ${json.booking.queue.label} - ${json.booking.customerName ?? "Pelanggan"}`,
+        );
+      } else {
+        setMessage("Tidak ada antrian menunggu");
+      }
+
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal memanggil antrian");
+    } finally {
+      setCallingQueue(false);
+    }
+  }
 
   const syncBookingStatusLocally = useCallback(
     (bookingId: string, nextStatus: BookingItem["status"]) => {
@@ -1336,6 +1465,69 @@ export default function ReservasiPage() {
         </div>
       )}
 
+      {data && (
+        <section className="rounded-lg border border-gray-100 bg-white p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Layar Panggil Antrian
+              </p>
+              {activeQueueBooking ? (
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <p className="text-5xl font-black text-gray-950">
+                    {activeQueueBooking.queue?.label}
+                  </p>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">
+                      {activeQueueBooking.member?.fullName ??
+                        activeQueueBooking.walkInName ??
+                        "Pelanggan"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {activeQueueBooking.service.name} ·{" "}
+                      {activeQueueBooking.barberman.name}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-gray-700">
+                  Belum ada nomor yang sedang dipanggil
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs sm:grid-cols-5">
+              {[
+                ["Menunggu", data.queueSummary?.waiting ?? 0],
+                ["Dipanggil", data.queueSummary?.called ?? 0],
+                ["Dilayani", data.queueSummary?.serving ?? 0],
+                ["Selesai", data.queueSummary?.done ?? 0],
+                ["Lewat", data.queueSummary?.missed ?? 0],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-md bg-gray-50 px-3 py-2">
+                  <p className="font-bold text-gray-900">{value}</p>
+                  <p className="mt-1 text-gray-500">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={callNextQueue}
+              disabled={callingQueue}
+              className="rounded-lg bg-blue-600 px-4 py-3 text-xs font-bold uppercase tracking-wide text-white disabled:opacity-50"
+            >
+              {callingQueue ? "Memanggil..." : "Panggil Berikutnya"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            Nomor dipanggil sesuai jam reservasi lalu nomor antrian. Jika tidak
+            mulai layanan dalam 10 menit setelah dipanggil, sistem menandai
+            no-show otomatis saat dashboard refresh.
+          </p>
+        </section>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4">
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-100 bg-white px-3 py-2">
@@ -1382,13 +1574,14 @@ export default function ReservasiPage() {
             filteredBookings.map((booking) => {
               const payment = paymentLabel(booking);
               const steps = timelineSteps(booking);
+              const source = sourceTone(booking);
               const customerName =
                 booking.member?.fullName ?? booking.walkInName ?? "Walk-in";
 
               return (
                 <article
                   key={booking.id}
-                  className="rounded-lg border border-gray-100 bg-white p-4 shadow-sm"
+                  className={`rounded-lg border p-4 shadow-sm ${cardStateTone(booking)}`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0">
@@ -1406,9 +1599,16 @@ export default function ReservasiPage() {
                         >
                           {payment.label}
                         </span>
-                        {booking.isWalkIn && (
-                          <span className="rounded-full bg-orange-50 px-2 py-1 text-[11px] font-semibold text-orange-700">
-                            Walk-in
+                        <span
+                          className={`rounded-full px-2 py-1 text-[11px] font-bold ${source.badge}`}
+                        >
+                          {source.label}
+                        </span>
+                        {booking.queue?.label && (
+                          <span
+                            className={`rounded-full px-2 py-1 text-[11px] font-bold ${queueTone(booking.queue.status)}`}
+                          >
+                            Antrian {booking.queue.label}
                           </span>
                         )}
                       </div>
@@ -1417,6 +1617,11 @@ export default function ReservasiPage() {
                         {formatIndonesianDateTime(booking.scheduledStart)} ·{" "}
                         {booking.barberman.name}
                       </p>
+                      {booking.queue?.status && (
+                        <p className="mt-1 text-xs font-semibold text-gray-700">
+                          Status antrian: {queueLabel(booking.queue.status)}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap gap-2">

@@ -34,6 +34,14 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum BookingQueueStatus {
+  WAITING
+  CALLED
+  SERVING
+  DONE
+  MISSED
+}
+
 enum InventoryMovementType {
   IN
   OUT
@@ -209,6 +217,12 @@ model Booking {
   serviceEndAt   DateTime?
   completedAt    DateTime?
   canceledAt     DateTime?
+  queueDate       DateTime?
+  queueNumber     Int?
+  queueStatus     BookingQueueStatus?
+  queueAssignedAt DateTime?
+  queueCalledAt   DateTime?
+  queueNoShowAt   DateTime?
   isWalkIn       Boolean                @default(false)
   walkInName     String?
   walkInPhone    String?
@@ -225,8 +239,10 @@ model Booking {
   payment        Payment?
 
   @@index([branchId, status, scheduledStart])
+  @@index([branchId, queueDate, queueStatus, scheduledStart])
   @@index([barbermanId, scheduledStart])
   @@index([memberId, scheduledStart])
+  @@unique([branchId, queueDate, queueNumber])
 }
 
 model BookingStatusHistory {

@@ -24,7 +24,23 @@ interface Booking {
   service: { name: string };
   barberman: { name: string };
   branch: { name: string };
+  queue?: {
+    number: number;
+    label: string | null;
+    status: string | null;
+    assignedAt: string | null;
+    calledAt: string | null;
+  } | null;
   payment?: { status: string; isDeposit: boolean } | null;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function formatExpiryDateTime(isoString: string) {
@@ -263,6 +279,43 @@ export default function MemberReservationDashboard() {
     }
   }
 
+  function printQueueTicket(booking: Booking) {
+    if (!booking.queue?.label) {
+      return;
+    }
+
+    const html = `
+      <html>
+        <head><title>Tiket Antrian ${escapeHtml(booking.queue.label)}</title></head>
+        <body style="font-family:Arial, sans-serif; padding:24px; color:#111;">
+          <div style="max-width:420px; margin:0 auto; border:2px solid #111; padding:24px; text-align:center;">
+            <p style="margin:0 0 8px; font-size:12px; letter-spacing:3px; text-transform:uppercase;">Nomor Antrian</p>
+            <h1 style="margin:0; font-size:72px; line-height:1;">${escapeHtml(booking.queue.label)}</h1>
+            <p style="margin:16px 0 0; font-size:16px; font-weight:bold;">${escapeHtml(booking.branch.name)}</p>
+            <p style="margin:8px 0; font-size:13px;">${formatIndonesianDateTime(booking.scheduledStart)}</p>
+            <hr style="margin:18px 0;" />
+            <p style="margin:4px 0; font-size:13px;"><strong>Booking:</strong> ${escapeHtml(booking.code)}</p>
+            <p style="margin:4px 0; font-size:13px;"><strong>Layanan:</strong> ${escapeHtml(booking.service.name)}</p>
+            <p style="margin:4px 0; font-size:13px;"><strong>Barber:</strong> ${escapeHtml(booking.barberman.name)}</p>
+            <p style="margin:18px 0 0; font-size:12px; color:#555;">Tunjukkan tiket ini saat datang ke barber.</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=480,height=700");
+    if (!printWindow) {
+      setErrorMessage("Popup blocker aktif. Izinkan popup untuk cetak tiket.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
   // Get booking data for display
   const onProcessBookings = bookings.filter(
     (b) => b.phase === "Upcoming" || b.phase === "Berlangsung",
@@ -405,6 +458,11 @@ export default function MemberReservationDashboard() {
                         <p className="font-semibold text-black mt-1">
                           {booking.status}
                         </p>
+                        {booking.queue?.label && (
+                          <p className="text-xs text-blue-700 mt-1 font-bold">
+                            Antrian {booking.queue.label}
+                          </p>
+                        )}
                         {(paymentStatus === "PENDING" ||
                           paymentStatus === "EXPIRED" ||
                           paymentStatus === "FAILED") &&
@@ -441,6 +499,15 @@ export default function MemberReservationDashboard() {
                           {cancelingBookingId === booking.id
                             ? "Membatalkan..."
                             : "Batalkan"}
+                        </button>
+                      )}
+
+                      {booking.queue?.label && (
+                        <button
+                          onClick={() => printQueueTicket(booking)}
+                          className="px-4 py-2 text-xs tracking-[0.2em] uppercase font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                        >
+                          Cetak Tiket
                         </button>
                       )}
                     </div>
@@ -573,15 +640,30 @@ export default function MemberReservationDashboard() {
                         <p className="font-semibold text-black mt-1">
                           {booking.status}
                         </p>
+                        {booking.queue?.label && (
+                          <p className="text-xs text-blue-700 mt-1 font-bold">
+                            Antrian {booking.queue.label}
+                          </p>
+                        )}
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => openBookingDetail(booking)}
-                      className="px-4 py-2 text-xs tracking-[0.2em] uppercase font-bold text-white bg-black hover:bg-black/80 transition-colors"
-                    >
-                      Lihat Detail & Nota
-                    </button>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => openBookingDetail(booking)}
+                        className="px-4 py-2 text-xs tracking-[0.2em] uppercase font-bold text-white bg-black hover:bg-black/80 transition-colors"
+                      >
+                        Lihat Detail & Nota
+                      </button>
+                      {booking.queue?.label && (
+                        <button
+                          onClick={() => printQueueTicket(booking)}
+                          className="px-4 py-2 text-xs tracking-[0.2em] uppercase font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors"
+                        >
+                          Cetak Tiket
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
