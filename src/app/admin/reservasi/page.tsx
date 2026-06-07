@@ -32,6 +32,14 @@ type BookingItem = {
     | "NO_SHOW";
   scheduledStart: string;
   isWalkIn: boolean;
+  queue?: {
+    number: number;
+    label: string | null;
+    status: "WAITING" | "CALLED" | "SERVING" | "DONE" | "MISSED" | null;
+    assignedAt: string | null;
+    calledAt: string | null;
+    noShowAt: string | null;
+  } | null;
   walkInName?: string | null;
   service: { id: string; name: string; price: number };
   products: Array<{
@@ -79,6 +87,13 @@ type DashboardResponse = {
     paymentPending: number;
     canceled?: number;
     noShow?: number;
+  };
+  queueSummary?: {
+    waiting: number;
+    called: number;
+    serving: number;
+    done: number;
+    missed: number;
   };
   bookings: BookingItem[];
 };
@@ -252,6 +267,30 @@ function statusLabel(status: BookingItem["status"]) {
   return map[status];
 }
 
+function queueTone(status: BookingItem["queue"] extends { status: infer Status } ? Status : string | null | undefined) {
+  const map: Record<string, string> = {
+    WAITING: "bg-blue-50 text-blue-700",
+    CALLED: "bg-indigo-600 text-white",
+    SERVING: "bg-amber-100 text-amber-800",
+    DONE: "bg-emerald-100 text-emerald-800",
+    MISSED: "bg-red-100 text-red-800",
+  };
+
+  return status ? (map[String(status)] ?? "bg-gray-100 text-gray-700") : "";
+}
+
+function queueLabel(status: BookingItem["queue"] extends { status: infer Status } ? Status : string | null | undefined) {
+  const map: Record<string, string> = {
+    WAITING: "Menunggu",
+    CALLED: "Dipanggil",
+    SERVING: "Dilayani",
+    DONE: "Selesai",
+    MISSED: "Lewat / no-show",
+  };
+
+  return status ? (map[String(status)] ?? "-") : "-";
+}
+
 function paymentLabel(booking: BookingItem) {
   if (!booking.payment) {
     return {
@@ -394,6 +433,7 @@ export default function ReservasiPage() {
     useState<PaymentSuccessState | null>(null);
   const [reservationFilter, setReservationFilter] =
     useState<ReservationFilter>("ALL");
+  const [callingQueue, setCallingQueue] = useState(false);
 
   const qrisModalOpen = qrisModalVisible && qrisModal !== null;
   const qrisBookingId = qrisModal?.bookingId ?? null;
@@ -523,6 +563,14 @@ export default function ReservasiPage() {
     });
   }, [data?.bookings, selectedBranch?.barbermen]);
 
+  const activeQueueBooking = useMemo(
+    () =>
+      (data?.bookings ?? []).find(
+        (booking) => booking.queue?.status === "CALLED",
+      ) ?? null,
+    [data?.bookings],
+  );
+
   useEffect(() => {
     if (!selectedBranch) {
       setWalkInServiceId("");
@@ -610,6 +658,53 @@ export default function ReservasiPage() {
       setLoading(false);
     }
   }, [branchId, date, role]);
+
+  async function callNextQueue() {
+    if (!branchId || !date) {
+      setError("Pilih cabang dan tanggal terlebih dahulu");
+      return;
+    }
+
+    try {
+      setCallingQueue(true);
+      setError(null);
+      setMessage(null);
+
+      const response = await authFetch("/api/bookings/admin/queue/call-next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          branchId: role === "SUPER_ADMIN" ? branchId : undefined,
+          date,
+        }),
+      });
+      const json = (await response.json()) as {
+        message?: string;
+        booking?: {
+          queue?: { label: string | null };
+          customerName?: string;
+        } | null;
+      };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal memanggil antrian");
+      }
+
+      if (json.booking?.queue?.label) {
+        setMessage(
+          `Memanggil ${json.booking.queue.label} - ${json.booking.customerName ?? "Pelanggan"}`,
+        );
+      } else {
+        setMessage("Tidak ada antrian menunggu");
+      }
+
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal memanggil antrian");
+    } finally {
+      setCallingQueue(false);
+    }
+  }
 
   const syncBookingStatusLocally = useCallback(
     (bookingId: string, nextStatus: BookingItem["status"]) => {
@@ -1534,6 +1629,69 @@ export default function ReservasiPage() {
         </div>
       )}
 
+      {data && (
+        <section className="rounded-lg border border-gray-100 bg-white p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Layar Panggil Antrian
+              </p>
+              {activeQueueBooking ? (
+                <div className="mt-2 flex flex-wrap items-end gap-3">
+                  <p className="text-5xl font-black text-gray-950">
+                    {activeQueueBooking.queue?.label}
+                  </p>
+                  <div>
+                    <p className="text-sm font-bold text-gray-900">
+                      {activeQueueBooking.member?.fullName ??
+                        activeQueueBooking.walkInName ??
+                        "Pelanggan"}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {activeQueueBooking.service.name} ·{" "}
+                      {barberName(activeQueueBooking)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm font-semibold text-gray-700">
+                  Belum ada nomor yang sedang dipanggil
+                </p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center text-xs sm:grid-cols-5">
+              {[
+                ["Menunggu", data.queueSummary?.waiting ?? 0],
+                ["Dipanggil", data.queueSummary?.called ?? 0],
+                ["Dilayani", data.queueSummary?.serving ?? 0],
+                ["Selesai", data.queueSummary?.done ?? 0],
+                ["Lewat", data.queueSummary?.missed ?? 0],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-md bg-gray-50 px-3 py-2">
+                  <p className="font-bold text-gray-900">{value}</p>
+                  <p className="mt-1 text-gray-500">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={callNextQueue}
+              disabled={callingQueue}
+              className="rounded-lg bg-blue-600 px-4 py-3 text-xs font-bold uppercase tracking-wide text-white disabled:opacity-50"
+            >
+              {callingQueue ? "Memanggil..." : "Panggil Berikutnya"}
+            </button>
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            Nomor dipanggil sesuai jam reservasi lalu nomor antrian. Jika tidak
+            mulai layanan dalam 10 menit setelah dipanggil, sistem menandai
+            no-show otomatis saat dashboard refresh.
+          </p>
+        </section>
+      )}
+
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px] gap-4">
         <div className="space-y-3">
           <div className="rounded-lg border border-gray-100 bg-white px-3 py-3 shadow-sm">
@@ -1598,9 +1756,18 @@ export default function ReservasiPage() {
                 <article
                   key={booking.id}
                   className={`rounded-xl border-y border-r border-l-4 p-4 shadow-sm ${
-                    booking.isWalkIn
-                      ? "border-y-orange-100 border-r-orange-100 border-l-orange-500 bg-orange-50/20"
-                      : "border-y-sky-100 border-r-sky-100 border-l-sky-500 bg-sky-50/20"
+                    booking.queue?.status === "CALLED"
+                      ? "border-y-indigo-100 border-r-indigo-100 border-l-indigo-500 bg-indigo-50/30"
+                      : booking.status === "IN_PROGRESS"
+                        ? "border-y-amber-100 border-r-amber-100 border-l-amber-500 bg-amber-50/30"
+                        : booking.status === "NO_SHOW" ||
+                            booking.queue?.status === "MISSED"
+                          ? "border-y-red-100 border-r-red-100 border-l-red-500 bg-red-50/30"
+                          : booking.status === "COMPLETED"
+                            ? "border-y-emerald-100 border-r-emerald-100 border-l-emerald-500 bg-emerald-50/30"
+                            : booking.isWalkIn
+                              ? "border-y-orange-100 border-r-orange-100 border-l-orange-500 bg-orange-50/20"
+                              : "border-y-sky-100 border-r-sky-100 border-l-sky-500 bg-sky-50/20"
                   }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1638,11 +1805,18 @@ export default function ReservasiPage() {
                           <span
                             className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${payment.tone}`}
                           >
-                            {payment.label}
+                          {payment.label}
+                        </span>
+                        {booking.queue?.label && (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${queueTone(booking.queue.status)}`}
+                          >
+                            Antrian {booking.queue.label}
                           </span>
-                          {isUnassignedWalkIn(booking) && (
-                            <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
-                              Belum assigned
+                        )}
+                        {isUnassignedWalkIn(booking) && (
+                          <span className="inline-flex rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-700">
+                            Belum assigned
                             </span>
                           )}
                         </div>
@@ -1666,6 +1840,11 @@ export default function ReservasiPage() {
                             {barberName(booking)}
                           </p>
                         </div>
+                        {booking.queue?.status && (
+                          <p className="mt-2 text-xs font-semibold text-gray-700">
+                            Status antrian: {queueLabel(booking.queue.status)}
+                          </p>
+                        )}
                       </div>
                     </div>
 

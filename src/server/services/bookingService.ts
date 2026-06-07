@@ -1,4 +1,4 @@
-import { DayOfWeek, type BookingStatus } from "@prisma/client";
+import { BookingQueueStatus, DayOfWeek, type BookingStatus } from "@prisma/client";
 import { bookingRepository } from "@/server/repositories/bookingRepository";
 import {
   getEarlierDeadline,
@@ -234,6 +234,14 @@ function calculateTotalDue(input: {
     0,
   );
   return toNumberDecimal(input.servicePrice) + productsTotal;
+}
+
+function formatQueueNumber(queueNumber: number | null) {
+  if (!queueNumber) {
+    return null;
+  }
+
+  return `A${String(queueNumber).padStart(3, "0")}`;
 }
 
 const PAYMENT_EXPIRY_REMINDER_MINUTES = 2;
@@ -771,6 +779,15 @@ export const bookingService = {
         service: booking.service,
         barberman: booking.barberman,
         branch: booking.branch,
+        queue: booking.queueNumber
+          ? {
+              number: booking.queueNumber,
+              label: formatQueueNumber(booking.queueNumber),
+              status: booking.queueStatus,
+              assignedAt: booking.queueAssignedAt,
+              calledAt: booking.queueCalledAt,
+            }
+          : null,
         payment: booking.payment
           ? {
               id: booking.payment.id,
@@ -812,6 +829,17 @@ export const bookingService = {
       ? getBusinessDayWindowFromInput(input.date)
       : getBusinessDayWindow(new Date());
 
+    await bookingRepository.assignMissingQueueTicketsForDay({
+      branchId: input.branchId,
+      dateStart: dayWindow.start,
+      dateEnd: dayWindow.end,
+    });
+
+    await bookingRepository.markExpiredCalledQueues({
+      branchId: input.branchId,
+      queueDate: dayWindow.start,
+    });
+
     const allBookings = await bookingRepository.findAdminDailyBookings(
       input.branchId,
       dayWindow.start,
@@ -838,10 +866,29 @@ export const bookingService = {
         (booking) => booking.status === "PAYMENT_PENDING",
       ).length,
     };
+    const queueItems = bookings.filter((booking) => booking.queueNumber);
+    const queueSummary = {
+      waiting: queueItems.filter(
+        (booking) => booking.queueStatus === BookingQueueStatus.WAITING,
+      ).length,
+      called: queueItems.filter(
+        (booking) => booking.queueStatus === BookingQueueStatus.CALLED,
+      ).length,
+      serving: queueItems.filter(
+        (booking) => booking.queueStatus === BookingQueueStatus.SERVING,
+      ).length,
+      done: queueItems.filter(
+        (booking) => booking.queueStatus === BookingQueueStatus.DONE,
+      ).length,
+      missed: queueItems.filter(
+        (booking) => booking.queueStatus === BookingQueueStatus.MISSED,
+      ).length,
+    };
 
     return {
       date: `${dayWindow.parts.year}-${String(dayWindow.parts.month).padStart(2, "0")}-${String(dayWindow.parts.day).padStart(2, "0")}`,
       summary,
+      queueSummary,
       bookings: bookings.map((booking) => ({
         id: booking.id,
         code: booking.code,
@@ -849,6 +896,16 @@ export const bookingService = {
         scheduledStart: booking.scheduledStart,
         scheduledEnd: booking.scheduledEnd,
         isWalkIn: booking.isWalkIn,
+        queue: booking.queueNumber
+          ? {
+              number: booking.queueNumber,
+              label: formatQueueNumber(booking.queueNumber),
+              status: booking.queueStatus,
+              assignedAt: booking.queueAssignedAt,
+              calledAt: booking.queueCalledAt,
+              noShowAt: booking.queueNoShowAt,
+            }
+          : null,
         walkInName: booking.walkInName,
         walkInPhone: booking.walkInPhone,
         service: booking.service,
@@ -898,6 +955,50 @@ export const bookingService = {
         barberman: booking.barberman,
         member: booking.member,
       })),
+    };
+  },
+
+  async callNextQueue(input: {
+    branchId: string;
+    date?: string;
+    changedById: string;
+  }) {
+    const dayWindow = input.date
+      ? getBusinessDayWindowFromInput(input.date)
+      : getBusinessDayWindow(new Date());
+
+    await bookingRepository.markExpiredCalledQueues({
+      branchId: input.branchId,
+      queueDate: dayWindow.start,
+      changedById: input.changedById,
+    });
+
+    const booking = await bookingRepository.callNextQueueBooking({
+      branchId: input.branchId,
+      queueDate: dayWindow.start,
+      changedById: input.changedById,
+    });
+
+    if (!booking) {
+      return { booking: null };
+    }
+
+    return {
+      booking: {
+        id: booking.id,
+        code: booking.code,
+        queue: {
+          number: booking.queueNumber,
+          label: formatQueueNumber(booking.queueNumber),
+          status: booking.queueStatus,
+          calledAt: booking.queueCalledAt,
+        },
+        customerName:
+          booking.walkInName ?? booking.member?.fullName ?? "Pelanggan",
+        scheduledStart: booking.scheduledStart,
+        service: booking.service,
+        barberman: booking.barberman,
+      },
     };
   },
 

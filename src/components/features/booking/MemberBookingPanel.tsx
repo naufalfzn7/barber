@@ -45,6 +45,13 @@ type MemberHistoryItem = {
   service: { name: string; price: number };
   barberman: { name: string };
   branch: { name: string };
+  queue?: {
+    number: number;
+    label: string | null;
+    status: string | null;
+    assignedAt: string | null;
+    calledAt: string | null;
+  } | null;
   payment?: {
     id: string;
     status: string;
@@ -645,6 +652,43 @@ export default function MemberBookingPanel() {
     printWindow.print();
   }
 
+  function printQueueTicket(booking: MemberHistoryItem) {
+    if (!booking.queue?.label) {
+      return;
+    }
+
+    const html = `
+      <html>
+        <head><title>Tiket Antrian ${escapeHtml(booking.queue.label)}</title></head>
+        <body style="font-family:Arial, sans-serif; padding:24px; color:#111;">
+          <div style="max-width:420px; margin:0 auto; border:2px solid #111; padding:24px; text-align:center;">
+            <p style="margin:0 0 8px; font-size:12px; letter-spacing:3px; text-transform:uppercase;">Nomor Antrian</p>
+            <h1 style="margin:0; font-size:72px; line-height:1;">${escapeHtml(booking.queue.label)}</h1>
+            <p style="margin:16px 0 0; font-size:16px; font-weight:bold;">${escapeHtml(booking.branch.name)}</p>
+            <p style="margin:8px 0; font-size:13px;">${formatIndonesianDateTime(booking.scheduledStart)}</p>
+            <hr style="margin:18px 0;" />
+            <p style="margin:4px 0; font-size:13px;"><strong>Booking:</strong> ${escapeHtml(booking.code)}</p>
+            <p style="margin:4px 0; font-size:13px;"><strong>Layanan:</strong> ${escapeHtml(booking.service.name)}</p>
+            <p style="margin:4px 0; font-size:13px;"><strong>Barber:</strong> ${escapeHtml(booking.barberman.name)}</p>
+            <p style="margin:18px 0 0; font-size:12px; color:#555;">Tunjukkan tiket ini saat datang ke barber.</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const printWindow = window.open("", "_blank", "width=480,height=700");
+    if (!printWindow) {
+      setError("Popup blocker aktif. Izinkan popup untuk cetak tiket.");
+      return;
+    }
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
   if (role !== "MEMBER") {
     return (
       <div className="max-w-2xl mx-auto bg-white border border-black/10 p-8 text-center">
@@ -890,6 +934,14 @@ export default function MemberBookingPanel() {
                     <p className="text-xs text-black/70 mt-2">
                       {item.branch.name} - {item.phase}
                     </p>
+                    {item.queue?.label && (
+                      <div className="mt-3 inline-flex items-center gap-2 border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-800">
+                        <span>Nomor antrian</span>
+                        <span className="text-lg font-black">
+                          {item.queue.label}
+                        </span>
+                      </div>
+                    )}
                     {(paymentStatus === "PENDING" ||
                       paymentStatus === "EXPIRED" ||
                       paymentStatus === "FAILED") &&
@@ -949,6 +1001,16 @@ export default function MemberBookingPanel() {
                         className="px-3 py-1.5 bg-green-600 text-white text-xs tracking-widest uppercase font-semibold hover:bg-green-700 disabled:opacity-60 transition-colors whitespace-nowrap"
                       >
                         {loadingReceipt ? "Loading..." : "🧾 Lihat Nota"}
+                      </button>
+                    )}
+
+                    {item.queue?.label && (
+                      <button
+                        type="button"
+                        onClick={() => printQueueTicket(item)}
+                        className="px-3 py-1.5 bg-blue-600 text-white text-xs tracking-widest uppercase font-semibold hover:bg-blue-700 transition-colors whitespace-nowrap"
+                      >
+                        Cetak Tiket
                       </button>
                     )}
                   </div>

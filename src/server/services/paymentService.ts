@@ -6,6 +6,7 @@ import {
   UserRole,
 } from "@prisma/client";
 import { env } from "@/server/core/env";
+import { bookingRepository } from "@/server/repositories/bookingRepository";
 import { paymentRepository } from "@/server/repositories/paymentRepository";
 import {
   getEarlierDeadline,
@@ -49,6 +50,19 @@ const XENDIT_CALLBACK_URL_REGEX =
 function assertAdminScope(actor: Actor, bookingBranchId: string) {
   if (actor.role === "ADMIN" && actor.branchId !== bookingBranchId) {
     throw new Error("Forbidden for other branch");
+  }
+}
+
+async function assignQueueAfterPaidDeposit(result: {
+  payment: { status: PaymentStatus; isDeposit: boolean };
+  booking: { id: string } | null;
+}) {
+  if (
+    result.booking &&
+    result.payment.status === PaymentStatus.PAID &&
+    result.payment.isDeposit
+  ) {
+    await bookingRepository.assignQueueTicket(result.booking.id);
   }
 }
 
@@ -277,6 +291,8 @@ export const paymentService = {
     if (!result) {
       throw new Error("Payment reference not found");
     }
+
+    await assignQueueAfterPaidDeposit(result);
 
     return result;
   },
@@ -508,6 +524,8 @@ export const paymentService = {
     if (!result) {
       throw new Error("Payment reference not found");
     }
+
+    await assignQueueAfterPaidDeposit(result);
 
     return result;
   },
