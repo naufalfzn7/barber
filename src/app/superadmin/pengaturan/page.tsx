@@ -57,6 +57,11 @@ type DepositDeadlineSettingResponse = {
   message?: string;
 };
 
+type RefundDeadlineSettingResponse = {
+  refundRequestDeadlineHours: number;
+  message?: string;
+};
+
 const DAYS = [
   "MONDAY",
   "TUESDAY",
@@ -136,6 +141,9 @@ export default function PengaturanPage() {
   const [depositDeadlineHours, setDepositDeadlineHours] = useState(1);
   const [depositDeadlineInput, setDepositDeadlineInput] = useState("1");
   const [savingDepositDeadline, setSavingDepositDeadline] = useState(false);
+  const [refundDeadlineHours, setRefundDeadlineHours] = useState(12);
+  const [refundDeadlineInput, setRefundDeadlineInput] = useState("12");
+  const [savingRefundDeadline, setSavingRefundDeadline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -154,6 +162,9 @@ export default function PengaturanPage() {
   const depositDeadlinePreviewReservationHour = 10;
   const depositDeadlinePreviewPaymentHour =
     (depositDeadlinePreviewReservationHour - depositDeadlineHours + 24) % 24;
+  const refundDeadlinePreviewReservationHour = 10;
+  const refundDeadlinePreviewRequestHour =
+    (refundDeadlinePreviewReservationHour - refundDeadlineHours + 24) % 24;
 
   const loadBranches = useCallback(async () => {
     const response = await authFetch("/api/bookings/catalog");
@@ -227,6 +238,17 @@ export default function PengaturanPage() {
     setDepositDeadlineInput(String(normalized));
   }, []);
 
+  const loadRefundDeadlineSetting = useCallback(async () => {
+    const response = await authFetch(
+      "/api/superadmin/settings/refund-deadline",
+    );
+    const result = await readJson<RefundDeadlineSettingResponse>(response);
+    const nextHours = Number(result.refundRequestDeadlineHours);
+    const normalized = Number.isFinite(nextHours) ? Math.trunc(nextHours) : 12;
+    setRefundDeadlineHours(normalized);
+    setRefundDeadlineInput(String(normalized));
+  }, []);
+
   const loadAll = useCallback(
     async (branchId: string) => {
       setLoading(true);
@@ -238,6 +260,7 @@ export default function PengaturanPage() {
           loadHolidays(branchId),
           loadDepositSetting(),
           loadDepositDeadlineSetting(),
+          loadRefundDeadlineSetting(),
         ]);
       } catch (cause) {
         setError(
@@ -255,6 +278,7 @@ export default function PengaturanPage() {
       loadDepositSetting,
       loadHolidays,
       loadOperatingHours,
+      loadRefundDeadlineSetting,
     ],
   );
 
@@ -528,6 +552,53 @@ export default function PengaturanPage() {
       );
     } finally {
       setSavingDepositDeadline(false);
+    }
+  }
+
+  async function handleSaveRefundDeadlineSetting() {
+    const parsed = Number(refundDeadlineInput);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 168) {
+      setError("Batas pengajuan pengembalian harus angka 1-168 jam");
+      return;
+    }
+
+    const normalized = Math.trunc(parsed);
+    const confirmed = await confirmAction({
+      title: "Simpan batas pengajuan pengembalian?",
+      text: `Member dapat mengajukan pengembalian paling lambat ${normalized} jam sebelum jadwal reservasi.`,
+      confirmButtonText: "Ya, simpan",
+    });
+
+    if (!confirmed) {
+      return;
+    }
+
+    setSavingRefundDeadline(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const response = await authFetch(
+        "/api/superadmin/settings/refund-deadline",
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refundRequestDeadlineHours: normalized }),
+        },
+      );
+      const result = await readJson<RefundDeadlineSettingResponse>(response);
+      const nextHours = Math.trunc(Number(result.refundRequestDeadlineHours));
+      setRefundDeadlineHours(nextHours);
+      setRefundDeadlineInput(String(nextHours));
+      setMessage("Batas pengajuan pengembalian tersimpan.");
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Gagal menyimpan batas pengajuan pengembalian",
+      );
+    } finally {
+      setSavingRefundDeadline(false);
     }
   }
 
@@ -1190,6 +1261,90 @@ export default function PengaturanPage() {
                 <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
                   Contoh: reservasi pukul 10:00 dengan batas 2 jam harus
                   dibayar paling lambat pukul 08:00.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-gray-100 bg-white p-5 shadow-sm">
+            <div className="flex flex-col gap-1 border-b border-gray-100 pb-4">
+              <h3 className="text-sm font-semibold text-gray-900">
+                Batas Pengajuan Pengembalian
+              </h3>
+              <p className="text-xs text-gray-400 mt-0.5">
+                Jumlah jam sebelum reservasi sebagai batas terakhir member
+                mengajukan refund setelah pembayaran berhasil.
+              </p>
+            </div>
+
+            <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
+              <div className="space-y-3">
+                <label className="block text-xs text-gray-500">
+                  <span className="mb-1 block font-semibold text-gray-700">
+                    Batas Pengajuan
+                  </span>
+                  <div className="flex max-w-xs items-center overflow-hidden rounded-lg border border-gray-200 bg-white focus-within:ring-2 focus-within:ring-black">
+                    <input
+                      type="number"
+                      min={1}
+                      max={168}
+                      value={refundDeadlineInput}
+                      onChange={(event) =>
+                        setRefundDeadlineInput(event.target.value)
+                      }
+                      className="w-full px-3 py-2 text-sm text-gray-900 focus:outline-none"
+                    />
+                    <span className="border-l border-gray-200 px-3 text-sm font-semibold text-gray-500">
+                      jam
+                    </span>
+                  </div>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={handleSaveRefundDeadlineSetting}
+                  disabled={savingRefundDeadline}
+                  className="rounded-lg bg-black px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingRefundDeadline
+                    ? "Menyimpan..."
+                    : "Simpan Batas Refund"}
+                </button>
+              </div>
+
+              <div className="rounded-lg bg-gray-50 p-4 text-xs text-gray-600">
+                <p className="font-semibold text-gray-900">Preview</p>
+                <div className="mt-3 space-y-2">
+                  <div className="flex justify-between gap-3">
+                    <span>Jam reservasi</span>
+                    <span className="font-semibold text-gray-900">
+                      {String(refundDeadlinePreviewReservationHour).padStart(
+                        2,
+                        "0",
+                      )}
+                      :00
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span>Batas ajukan</span>
+                    <span className="font-semibold text-gray-900">
+                      {String(refundDeadlinePreviewRequestHour).padStart(
+                        2,
+                        "0",
+                      )}
+                      :00
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-3 border-t border-gray-200 pt-2">
+                    <span>Rule aktif</span>
+                    <span className="font-semibold text-gray-900">
+                      {refundDeadlineHours} jam sebelum reservasi
+                    </span>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+                  Contoh: reservasi pukul 10:00 dengan batas 12 jam harus
+                  diajukan sebelum pukul 22:00 di hari sebelumnya.
                 </p>
               </div>
             </div>

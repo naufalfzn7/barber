@@ -13,6 +13,11 @@ import {
   getExpiredPendingBookingCutoff,
   isBeforeDepositPaymentDeadline,
 } from "@/server/services/depositSettings";
+import {
+  getRefundRequestDeadline,
+  getRefundRequestDeadlineHours,
+  isBeforeRefundRequestDeadline,
+} from "@/server/services/refundSettings";
 
 const SLOT_STEP_MINUTES = 15;
 const BUSINESS_TIME_ZONE = "Asia/Jakarta";
@@ -734,6 +739,7 @@ export const bookingService = {
 
     const bookings = await bookingRepository.findMemberBookingHistory(memberId);
     const deadlineHours = await getDepositPaymentDeadlineHours();
+    const refundDeadlineHours = await getRefundRequestDeadlineHours();
 
     return bookings.map((booking) => {
       const now = new Date();
@@ -803,6 +809,37 @@ export const bookingService = {
               qrisExpiresAt: booking.payment.qrisExpiresAt,
             }
           : null,
+        refund: booking.refundRequest
+          ? {
+              id: booking.refundRequest.id,
+              status: booking.refundRequest.status,
+              amount: toNumberDecimal(booking.refundRequest.amount),
+              reason: booking.refundRequest.reason,
+              contactPhone: booking.refundRequest.contactPhone,
+              refundMethod: booking.refundRequest.refundMethod,
+              requestedAt: booking.refundRequest.requestedAt,
+              reviewedAt: booking.refundRequest.reviewedAt,
+              adminNote: booking.refundRequest.adminNote,
+              rejectionReason: booking.refundRequest.rejectionReason,
+            }
+          : null,
+        refundEligibility: {
+          canRequest:
+            !booking.isWalkIn &&
+            booking.status === "UPCOMING" &&
+            booking.payment?.status === "PAID" &&
+            !booking.refundRequest &&
+            isBeforeRefundRequestDeadline({
+              scheduledStart: booking.scheduledStart,
+              deadlineHours: refundDeadlineHours,
+              now,
+            }),
+          deadlineHours: refundDeadlineHours,
+          deadline: getRefundRequestDeadline({
+            scheduledStart: booking.scheduledStart,
+            deadlineHours: refundDeadlineHours,
+          }),
+        },
       };
     });
   },
@@ -950,6 +987,20 @@ export const bookingService = {
               qrisString: booking.payment.qrisString,
               qrisImageUrl: booking.payment.qrisImageUrl,
               qrisExpiresAt: booking.payment.qrisExpiresAt,
+            }
+          : null,
+        refund: booking.refundRequest
+          ? {
+              id: booking.refundRequest.id,
+              status: booking.refundRequest.status,
+              amount: toNumberDecimal(booking.refundRequest.amount),
+              reason: booking.refundRequest.reason,
+              contactPhone: booking.refundRequest.contactPhone,
+              refundMethod: booking.refundRequest.refundMethod,
+              requestedAt: booking.refundRequest.requestedAt,
+              reviewedAt: booking.refundRequest.reviewedAt,
+              adminNote: booking.refundRequest.adminNote,
+              rejectionReason: booking.refundRequest.rejectionReason,
             }
           : null,
         barberman: booking.barberman,

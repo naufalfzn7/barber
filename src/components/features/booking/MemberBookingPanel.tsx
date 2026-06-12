@@ -56,6 +56,7 @@ type MemberHistoryItem = {
     id: string;
     status: string;
     amountDue: number;
+    amountPaid?: number | null;
     isDeposit: boolean;
     depositAmount: number | null;
     externalRef: string | null;
@@ -63,6 +64,23 @@ type MemberHistoryItem = {
     qrisImageUrl: string | null;
     qrisExpiresAt: string | null;
   } | null;
+  refund?: {
+    id: string;
+    status: "PENDING" | "APPROVED" | "REJECTED";
+    amount: number;
+    reason: string;
+    contactPhone: string | null;
+    refundMethod: "CASH" | "QRIS" | null;
+    requestedAt: string;
+    reviewedAt: string | null;
+    adminNote: string | null;
+    rejectionReason: string | null;
+  } | null;
+  refundEligibility?: {
+    canRequest: boolean;
+    deadlineHours: number;
+    deadline: string;
+  };
 };
 
 type BookingSlot = {
@@ -220,6 +238,30 @@ function getPaymentLabel(
   return getRemainingLabel(expiresAt);
 }
 
+function refundStatusLabel(status: MemberHistoryItem["refund"] extends infer Refund
+  ? Refund extends { status: infer Status }
+    ? Status
+    : string
+  : string) {
+  const map: Record<string, string> = {
+    PENDING: "Pengembalian diajukan",
+    APPROVED: "Pengembalian disetujui",
+    REJECTED: "Pengembalian ditolak",
+  };
+
+  return map[String(status)] ?? "Pengembalian";
+}
+
+function refundStatusTone(status: string) {
+  const map: Record<string, string> = {
+    PENDING: "border-amber-200 bg-amber-50 text-amber-800",
+    APPROVED: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    REJECTED: "border-red-200 bg-red-50 text-red-800",
+  };
+
+  return map[status] ?? "border-gray-200 bg-gray-50 text-gray-700";
+}
+
 export default function MemberBookingPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -244,6 +286,11 @@ export default function MemberBookingPanel() {
     null,
   );
   const [history, setHistory] = useState<MemberHistoryItem[]>([]);
+  const [refundModalBooking, setRefundModalBooking] =
+    useState<MemberHistoryItem | null>(null);
+  const [refundReason, setRefundReason] = useState("");
+  const [refundContactPhone, setRefundContactPhone] = useState("");
+  const [submittingRefund, setSubmittingRefund] = useState(false);
 
   // Deposit payment states
   const [showDepositModal, setShowDepositModal] = useState(false);
@@ -585,6 +632,58 @@ export default function MemberBookingPanel() {
       );
     } finally {
       setCancelingBookingId(null);
+    }
+  }
+
+  function openRefundModal(booking: MemberHistoryItem) {
+    setRefundModalBooking(booking);
+    setRefundReason("");
+    setRefundContactPhone(booking.refund?.contactPhone ?? "");
+  }
+
+  async function submitRefundRequest() {
+    if (!refundModalBooking) {
+      return;
+    }
+
+    if (!refundReason.trim()) {
+      setError("Alasan pengembalian wajib diisi");
+      return;
+    }
+
+    try {
+      setSubmittingRefund(true);
+      setError(null);
+      setMessage(null);
+
+      const response = await authFetch("/api/bookings/refund-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId: refundModalBooking.id,
+          reason: refundReason,
+          contactPhone: refundContactPhone || undefined,
+        }),
+      });
+
+      const json = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal mengajukan pengembalian");
+      }
+
+      setMessage(json.message ?? "Pengajuan pengembalian berhasil dikirim");
+      setRefundModalBooking(null);
+      notifyClientDataChanged("bookings:changed");
+      await loadHistory();
+      await loadSlots();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Gagal mengajukan pengembalian",
+      );
+    } finally {
+      setSubmittingRefund(false);
     }
   }
 
@@ -950,6 +1049,30 @@ export default function MemberBookingPanel() {
                           {paymentLabel}
                         </p>
                       )}
+                    {item.refund && (
+                      <div
+                        className={`mt-3 border px-3 py-2 text-xs font-semibold ${refundStatusTone(
+                          item.refund.status,
+                        )}`}
+                      >
+                        <p>
+                          {refundStatusLabel(item.refund.status)} - Rp{" "}
+                          {item.refund.amount.toLocaleString("id-ID")}
+                        </p>
+                        {item.refund.status === "APPROVED" &&
+                          item.refund.refundMethod && (
+                            <p className="mt-1 font-normal">
+                              Metode: {item.refund.refundMethod}
+                            </p>
+                          )}
+                        {item.refund.status === "REJECTED" &&
+                          item.refund.rejectionReason && (
+                            <p className="mt-1 font-normal">
+                              Alasan: {item.refund.rejectionReason}
+                            </p>
+                          )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="flex flex-col gap-2 items-end">
@@ -1004,6 +1127,16 @@ export default function MemberBookingPanel() {
                       </button>
                     )}
 
+                    {item.refundEligibility?.canRequest && (
+                      <button
+                        type="button"
+                        onClick={() => openRefundModal(item)}
+                        className="px-3 py-1.5 border border-amber-300 bg-amber-50 text-amber-800 text-xs tracking-widest uppercase font-semibold hover:bg-amber-100 transition-colors whitespace-nowrap"
+                      >
+                        Ajukan Pengembalian
+                      </button>
+                    )}
+
                     {item.queue?.label && (
                       <button
                         type="button"
@@ -1047,6 +1180,77 @@ export default function MemberBookingPanel() {
           }}
           onRefresh={loadHistory}
         />
+      )}
+
+      {refundModalBooking && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-lg p-6 space-y-4">
+            <div>
+              <h2 className="text-lg font-bold text-black">
+                Ajukan Pengembalian
+              </h2>
+              <p className="mt-1 text-xs text-black/60">
+                Booking {refundModalBooking.code}. Batas pengajuan{" "}
+                {refundModalBooking.refundEligibility?.deadline
+                  ? formatIndonesianDateTime(
+                      refundModalBooking.refundEligibility.deadline,
+                    )
+                  : "-"}
+                .
+              </p>
+            </div>
+
+            <label className="block">
+              <span className="text-xs uppercase tracking-[0.16em] text-black/70">
+                Alasan
+              </span>
+              <textarea
+                value={refundReason}
+                onChange={(event) => setRefundReason(event.target.value)}
+                rows={4}
+                className="mt-1 w-full border border-black/20 px-3 py-2 text-sm"
+                placeholder="Jelaskan alasan pengajuan pengembalian"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-xs uppercase tracking-[0.16em] text-black/70">
+                Kontak
+              </span>
+              <input
+                type="tel"
+                value={refundContactPhone}
+                onChange={(event) => setRefundContactPhone(event.target.value)}
+                className="mt-1 w-full border border-black/20 px-3 py-2 text-sm"
+                placeholder="Nomor WhatsApp/telepon untuk konfirmasi"
+              />
+            </label>
+
+            <div className="border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              Nominal pengembalian mengikuti pembayaran yang sudah tercatat.
+              Setelah admin menyetujui, reservasi akan dibatalkan dan slot
+              dilepas.
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setRefundModalBooking(null)}
+                className="flex-1 border border-black/20 bg-white py-2 text-xs tracking-[0.2em] uppercase font-bold"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={submitRefundRequest}
+                disabled={submittingRefund}
+                className="flex-1 bg-black text-white py-2 text-xs tracking-[0.2em] uppercase font-bold disabled:opacity-50"
+              >
+                {submittingRefund ? "Mengirim..." : "Kirim Pengajuan"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Receipt Modal */}

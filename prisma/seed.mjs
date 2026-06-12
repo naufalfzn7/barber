@@ -139,16 +139,16 @@ async function main() {
     where: {
       branchId_code: {
         branchId: branch.id,
-        code: "SV-HRCUT",
+        code: "SRV-SIGNATURE-CUT",
       },
     },
     update: {},
     create: {
       branchId: branch.id,
-      code: "SV-HRCUT",
-      name: "Haircut Basic",
-      price: "50000",
-      durationMinutes: 60,
+      code: "SRV-SIGNATURE-CUT",
+      name: "Signature Cut",
+      price: "65000",
+      durationMinutes: 45,
       bufferMinutes: 10,
       isActive: true,
     },
@@ -158,16 +158,17 @@ async function main() {
     where: {
       branchId_sku: {
         branchId: branch.id,
-        sku: "POMADE-001",
+        sku: "SKA-PRD-STRONG-POMADE-100",
       },
     },
     update: {},
     create: {
       branchId: branch.id,
-      sku: "POMADE-001",
-      name: "Pomade Monarch 100gr",
-      stockQty: 20,
-      minStockQty: 5,
+      sku: "SKA-PRD-STRONG-POMADE-100",
+      name: "Monarch Strong Pomade 100gr",
+      sellingPrice: "95000",
+      stockQty: 28,
+      minStockQty: 8,
       isActive: true,
     },
   });
@@ -283,7 +284,7 @@ async function main() {
       bookingId: booking.id,
       method: "QRIS",
       status: "PENDING",
-      amountDue: "50000",
+      amountDue: "65000",
       processedById: adminUser.id,
     },
   });

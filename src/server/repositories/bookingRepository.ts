@@ -348,6 +348,7 @@ export const bookingRepository = {
             qrisExpiresAt: true,
           },
         },
+        refundRequest: true,
       },
       orderBy: { scheduledStart: "desc" },
     });
@@ -403,6 +404,7 @@ export const bookingRepository = {
             qrisExpiresAt: true,
           },
         },
+        refundRequest: true,
       },
       orderBy: { scheduledStart: "asc" },
     });

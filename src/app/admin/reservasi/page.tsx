@@ -67,6 +67,18 @@ type BookingItem = {
     qrisImageUrl: string | null;
     qrisExpiresAt: string | null;
   } | null;
+  refund?: {
+    id: string;
+    status: "PENDING" | "APPROVED" | "REJECTED";
+    amount: number;
+    reason: string;
+    contactPhone: string | null;
+    refundMethod: "CASH" | "QRIS" | null;
+    requestedAt: string;
+    reviewedAt: string | null;
+    adminNote: string | null;
+    rejectionReason: string | null;
+  } | null;
 };
 
 type ProductCatalogItem = {
@@ -98,7 +110,7 @@ type DashboardResponse = {
   bookings: BookingItem[];
 };
 
-type PaymentStatus = "PENDING" | "PAID" | "EXPIRED" | "FAILED";
+type PaymentStatus = "PENDING" | "PAID" | "EXPIRED" | "FAILED" | "REFUNDED";
 
 type PaymentInfo = {
   id: string;
@@ -313,10 +325,41 @@ function paymentLabel(booking: BookingItem) {
     };
   }
 
+  if (booking.payment.status === "REFUNDED") {
+    return {
+      label: "Refunded",
+      tone: "bg-slate-100 text-slate-700",
+    };
+  }
+
   return {
     label: `Payment ${booking.payment.status.toLowerCase()}`,
     tone: "bg-red-50 text-red-700",
   };
+}
+
+function refundStatusLabel(status: BookingItem["refund"] extends infer Refund
+  ? Refund extends { status: infer Status }
+    ? Status
+    : string
+  : string) {
+  const map: Record<string, string> = {
+    PENDING: "Refund diajukan",
+    APPROVED: "Refund disetujui",
+    REJECTED: "Refund ditolak",
+  };
+
+  return map[String(status)] ?? "Refund";
+}
+
+function refundStatusTone(status: string) {
+  const map: Record<string, string> = {
+    PENDING: "bg-amber-100 text-amber-800",
+    APPROVED: "bg-emerald-100 text-emerald-800",
+    REJECTED: "bg-red-100 text-red-800",
+  };
+
+  return map[status] ?? "bg-gray-100 text-gray-700";
 }
 
 function timelineSteps(booking: BookingItem) {
@@ -1456,6 +1499,118 @@ export default function ReservasiPage() {
     }
   }
 
+  async function approveRefund(booking: BookingItem) {
+    if (!booking.refund || booking.refund.status !== "PENDING") {
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: "Setujui pengembalian?",
+      text: `Refund ${booking.code} sebesar ${toRupiah(booking.refund.amount)} akan dicatat manual dan reservasi dibatalkan.`,
+      input: "select",
+      inputOptions: {
+        CASH: "CASH",
+        QRIS: "QRIS",
+      },
+      inputValue: "CASH",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Setujui",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#111827",
+      cancelButtonColor: "#6b7280",
+    });
+
+    if (!result.isConfirmed || !result.value) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+
+      const response = await authFetch(
+        `/api/bookings/admin/${booking.id}/refund/approve`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            refundMethod: result.value,
+          }),
+        },
+      );
+      const json = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal menyetujui pengembalian");
+      }
+
+      setMessage(json.message ?? "Pengembalian disetujui");
+      await loadDashboard();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal menyetujui pengembalian",
+      );
+    }
+  }
+
+  async function rejectRefund(booking: BookingItem) {
+    if (!booking.refund || booking.refund.status !== "PENDING") {
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: "Tolak pengembalian?",
+      text: `Berikan alasan penolakan untuk booking ${booking.code}.`,
+      input: "textarea",
+      inputPlaceholder: "Alasan penolakan",
+      icon: "warning",
+      showCancelButton: true,
+      confirmButtonText: "Tolak",
+      cancelButtonText: "Batal",
+      confirmButtonColor: "#dc2626",
+      cancelButtonColor: "#6b7280",
+      inputValidator: (value) => {
+        if (!value.trim()) {
+          return "Alasan penolakan wajib diisi";
+        }
+        return null;
+      },
+    });
+
+    if (!result.isConfirmed || !result.value) {
+      return;
+    }
+
+    try {
+      setError(null);
+      setMessage(null);
+
+      const response = await authFetch(
+        `/api/bookings/admin/${booking.id}/refund/reject`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rejectionReason: result.value,
+          }),
+        },
+      );
+      const json = (await response.json()) as { message?: string };
+
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal menolak pengembalian");
+      }
+
+      setMessage(json.message ?? "Pengajuan pengembalian ditolak");
+      await loadDashboard();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Gagal menolak pengembalian",
+      );
+    }
+  }
+
   async function copyQrString() {
     if (!qrisModal?.qrString) {
       return;
@@ -1807,6 +1962,15 @@ export default function ReservasiPage() {
                           >
                           {payment.label}
                         </span>
+                        {booking.refund && (
+                          <span
+                            className={`inline-flex rounded-full px-2 py-1 text-[11px] font-semibold ${refundStatusTone(
+                              booking.refund.status,
+                            )}`}
+                          >
+                            {refundStatusLabel(booking.refund.status)}
+                          </span>
+                        )}
                         {booking.queue?.label && (
                           <span
                             className={`inline-flex rounded-full px-2 py-1 text-[11px] font-bold ${queueTone(booking.queue.status)}`}
@@ -1919,6 +2083,25 @@ export default function ReservasiPage() {
                         </button>
                       )}
 
+                      {booking.refund?.status === "PENDING" && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => void approveRefund(booking)}
+                            className="rounded-md bg-amber-600 px-3 py-2 text-[11px] font-semibold text-white"
+                          >
+                            Setujui Pengembalian
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void rejectRefund(booking)}
+                            className="rounded-md bg-red-50 px-3 py-2 text-[11px] font-semibold text-red-700"
+                          >
+                            Tolak Refund
+                          </button>
+                        </>
+                      )}
+
                       {booking.status === "COMPLETED" && (
                         <button
                           type="button"
@@ -1996,6 +2179,34 @@ export default function ReservasiPage() {
                           Booking ditutup sebagai tidak datang. Pembayaran yang
                           sudah masuk tetap tercatat.
                         </p>
+                      )}
+                      {booking.refund && (
+                        <div className="mt-3 rounded-md bg-amber-50 px-2 py-2 text-amber-900">
+                          <p className="font-semibold">
+                            {refundStatusLabel(booking.refund.status)} -{" "}
+                            {toRupiah(booking.refund.amount)}
+                          </p>
+                          <p className="mt-1">
+                            Alasan: {booking.refund.reason}
+                          </p>
+                          {booking.refund.contactPhone && (
+                            <p className="mt-1">
+                              Kontak: {booking.refund.contactPhone}
+                            </p>
+                          )}
+                          {booking.refund.status === "REJECTED" &&
+                            booking.refund.rejectionReason && (
+                              <p className="mt-1">
+                                Ditolak: {booking.refund.rejectionReason}
+                              </p>
+                            )}
+                          {booking.refund.status === "APPROVED" &&
+                            booking.refund.refundMethod && (
+                              <p className="mt-1">
+                                Metode refund: {booking.refund.refundMethod}
+                              </p>
+                            )}
+                        </div>
                       )}
                     </div>
                   </div>

@@ -34,6 +34,12 @@ enum PaymentStatus {
   REFUNDED
 }
 
+enum RefundRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 enum BookingQueueStatus {
   WAITING
   CALLED
@@ -86,6 +92,7 @@ model Branch {
   barberSchedules BarberSchedule[]
   holidays        Holiday[]
   revenueDaily    RevenueDaily[]
+  refundRequests  BookingRefundRequest[]
 
   @@index([isActive])
 }
@@ -108,6 +115,8 @@ model User {
   bookingStatusChanges      BookingStatusHistory[] @relation("BookingStatusChangedBy")
   inventoryMovements        InventoryMovement[]    @relation("InventoryMovementActor")
   processedPayments         Payment[]              @relation("PaymentProcessor")
+  refundRequests            BookingRefundRequest[] @relation("RefundRequestMember")
+  reviewedRefundRequests    BookingRefundRequest[] @relation("RefundRequestReviewer")
   notifications             Notification[]         @relation("NotificationReceiver")
   generatedPassword         GeneratedPassword?     @relation("GeneratedPasswordUser")
   generatedPasswordsCreated GeneratedPassword[]    @relation("GeneratedPasswordCreator")
@@ -237,6 +246,7 @@ model Booking {
   products       BookingProduct[]
   statusHistory  BookingStatusHistory[]
   payment        Payment?
+  refundRequest  BookingRefundRequest?
 
   @@index([branchId, status, scheduledStart])
   @@index([branchId, queueDate, queueStatus, scheduledStart])
@@ -285,6 +295,33 @@ model Payment {
   @@index([method, paidAt])
   @@index([processedById])
   @@index([isDeposit])
+}
+
+model BookingRefundRequest {
+  id              String              @id @default(cuid())
+  bookingId       String              @unique
+  memberId        String
+  branchId        String
+  status          RefundRequestStatus @default(PENDING)
+  amount          Decimal             @db.Decimal(12, 2)
+  reason          String              @db.Text
+  contactPhone    String?
+  refundMethod    PaymentMethod?
+  requestedAt     DateTime            @default(now())
+  reviewedAt      DateTime?
+  reviewedById    String?
+  adminNote       String?             @db.Text
+  rejectionReason String?             @db.Text
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  booking         Booking             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  member          User                @relation("RefundRequestMember", fields: [memberId], references: [id], onDelete: Cascade)
+  branch          Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  reviewedBy      User?               @relation("RefundRequestReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([branchId, status, requestedAt])
+  @@index([memberId, requestedAt])
+  @@index([reviewedById])
 }
 
 model InventoryItem {
