@@ -13,14 +13,16 @@ export const navItems: NavItem[] = [
 ];
 
 export const rightNavItems: NavItem[] = [
-  {
-    label: "EXPLORE",
-    href: "#",
-    children: [
-      { label: "SERVICES", href: "/services" },
-      { label: "GALLERY", href: "/gallery" },
-    ],
-  },
+  // NONAKTIF SEMENTARA: menu EXPLORE (Services & Gallery) disembunyikan.
+  // Untuk mengaktifkan kembali, hapus komentar pada blok di bawah ini.
+  // {
+  //   label: "EXPLORE",
+  //   href: "#",
+  //   children: [
+  //     { label: "SERVICES", href: "/services" },
+  //     { label: "GALLERY", href: "/gallery" },
+  //   ],
+  // },
   { label: "LOGIN", href: "/login" },
   { label: "KONTAK", href: "/contact" },
 ];
