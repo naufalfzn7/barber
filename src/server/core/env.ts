@@ -35,4 +35,5 @@ export const env = {
   xenditCallbackUrl: getOptionalEnv("XENDIT_CALLBACK_URL"),
   appEnv: process.env.APP_ENV ?? "development",
   appUrl: process.env.APP_URL ?? "http://localhost:3000",
+  cloudinaryUrl: getOptionalEnv("CLOUDINARY_URL"),
 };

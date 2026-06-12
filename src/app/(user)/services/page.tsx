@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { AuthAwareReservationLink } from "@/components/ui/AuthAwareReservationLink";
+import { getProductImages } from "@/server/services/publicMedia";
 
 type ServiceTier = { label: string; price: number; description?: string };
 
@@ -227,6 +228,17 @@ const fmt = (n: number) => `Rp ${n.toLocaleString("id-ID")}`;
 export default async function ServicesPage() {
   "use cache";
 
+  const dbProducts = await getProductImages();
+  const displayProducts =
+    dbProducts.length > 0
+      ? dbProducts.map((product) => ({
+          name: product.name,
+          description: "Tersedia di cabang Monarch Barber.",
+          price: product.sellingPrice,
+          image: product.imageUrl,
+        }))
+      : products;
+
   return (
     <main className="bg-[#EBEBEB] min-h-screen">
       {/* Hero */}
@@ -431,7 +443,7 @@ export default async function ServicesPage() {
           </div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-8">
-            {products.map((p) => (
+            {displayProducts.map((p) => (
               <div key={p.name} className="flex flex-col">
                 <div className="relative aspect-square bg-black border border-white/20 mb-5 overflow-hidden">
                   <Image

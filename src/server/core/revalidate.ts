@@ -23,7 +23,12 @@ export function revalidateBookingData() {
 export function revalidateInventoryData() {
   revalidateTag("inventory", "max");
   revalidateTag("bookings", "max");
-  for (const path of ["/admin/stok", "/admin/reservasi", "/superadmin/dashboard"]) {
+  for (const path of [
+    "/admin/stok",
+    "/admin/reservasi",
+    "/superadmin/dashboard",
+    "/services",
+  ]) {
     revalidatePath(path);
   }
 }
@@ -34,7 +39,7 @@ export function revalidateSuperadminData() {
   for (const path of SUPERADMIN_PATHS) {
     revalidatePath(path);
   }
-  for (const path of ["/reservasi", "/services"]) {
+  for (const path of ["/reservasi", "/services", "/surakarta", "/yogyakarta"]) {
     revalidatePath(path);
   }
 }

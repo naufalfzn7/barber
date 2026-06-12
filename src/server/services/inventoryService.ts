@@ -1,5 +1,10 @@
 import { InventoryMovementType, Prisma, UserRole } from "@prisma/client";
 import { inventoryRepository } from "@/server/repositories/inventoryRepository";
+import {
+  assertValidImage,
+  deleteImage,
+  uploadImage,
+} from "@/server/core/cloudinary";
 
 type Actor = {
   userId: string;
@@ -115,6 +120,71 @@ export const inventoryService = {
     }
 
     return { deleted: true };
+  },
+
+  async setItemImage(
+    input: {
+      branchId: string;
+      itemId: string;
+      file: { buffer: Buffer; type: string; size: number };
+    },
+    actor: Actor,
+  ) {
+    assertBranchScope(actor, input.branchId);
+    assertValidImage(input.file);
+
+    const existing = await inventoryRepository.findItemById(
+      input.itemId,
+      input.branchId,
+    );
+    if (!existing) {
+      throw new Error("Inventory item not found");
+    }
+
+    const uploaded = await uploadImage(
+      input.file.buffer,
+      `monarch/products/${input.branchId}`,
+    );
+
+    await inventoryRepository.updateImage({
+      itemId: input.itemId,
+      branchId: input.branchId,
+      imageUrl: uploaded.url,
+      imagePublicId: uploaded.publicId,
+    });
+
+    // Remove the previous asset after the new one is persisted.
+    if (existing.imagePublicId && existing.imagePublicId !== uploaded.publicId) {
+      await deleteImage(existing.imagePublicId);
+    }
+
+    return inventoryRepository.findItemById(input.itemId, input.branchId);
+  },
+
+  async removeItemImage(
+    input: { branchId: string; itemId: string },
+    actor: Actor,
+  ) {
+    assertBranchScope(actor, input.branchId);
+
+    const existing = await inventoryRepository.findItemById(
+      input.itemId,
+      input.branchId,
+    );
+    if (!existing) {
+      throw new Error("Inventory item not found");
+    }
+
+    await inventoryRepository.updateImage({
+      itemId: input.itemId,
+      branchId: input.branchId,
+      imageUrl: null,
+      imagePublicId: null,
+    });
+
+    await deleteImage(existing.imagePublicId);
+
+    return { removed: true };
   },
 
   async recordMovement(

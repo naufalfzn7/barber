@@ -26,11 +26,30 @@ type InventoryItem = {
   stockQty: number;
   minStockQty: number;
   isActive: boolean;
+  imageUrl: string | null;
   updatedAt: string;
 };
 
 function toRupiah(value: number) {
   return `Rp ${value.toLocaleString("id-ID")}`;
+}
+
+async function uploadProductImage(
+  itemId: string,
+  branchId: string,
+  file: File,
+) {
+  const data = new FormData();
+  data.append("file", file);
+  data.append("branchId", branchId);
+  const response = await authFetch(`/api/inventory/items/${itemId}/image`, {
+    method: "POST",
+    body: data,
+  });
+  const json = (await response.json()) as { message?: string };
+  if (!response.ok) {
+    throw new Error(json.message ?? "Gagal mengunggah gambar produk");
+  }
 }
 
 type InventoryMovement = {
@@ -116,6 +135,7 @@ function AddItemModal({
     sellingPrice: number;
     stockQty: number;
     minStockQty: number;
+    imageFile: File | null;
   }) => Promise<void>;
 }) {
   const [sku, setSku] = useState("");
@@ -123,6 +143,8 @@ function AddItemModal({
   const [sellingPrice, setSellingPrice] = useState(0);
   const [stockQty, setStockQty] = useState(0);
   const [minStockQty, setMinStockQty] = useState(0);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function handleSubmit() {
@@ -148,6 +170,7 @@ function AddItemModal({
         sellingPrice,
         stockQty,
         minStockQty,
+        imageFile,
       });
       onClose();
     } finally {
@@ -252,6 +275,39 @@ function AddItemModal({
             </div>
           </div>
 
+          <div>
+            <label className="text-xs text-gray-500 block mb-1.5">
+              Gambar Produk (opsional)
+            </label>
+            <div className="flex items-center gap-3">
+              {imagePreview ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={imagePreview}
+                  alt="Preview"
+                  className="h-16 w-16 rounded-lg object-cover bg-gray-100 border border-gray-200"
+                />
+              ) : (
+                <div className="h-16 w-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-[10px] text-gray-400 text-center px-1">
+                  Belum ada
+                </div>
+              )}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/avif"
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  setImageFile(file);
+                  setImagePreview(file ? URL.createObjectURL(file) : null);
+                }}
+                className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-gray-900 file:text-white file:text-xs file:cursor-pointer"
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 mt-1">
+              JPG/PNG/WEBP, maks 5 MB
+            </p>
+          </div>
+
           <div className="flex gap-2">
             <button
               onClick={onClose}
@@ -265,6 +321,158 @@ function AddItemModal({
               className="flex-1 py-2.5 text-sm bg-black text-white rounded-lg hover:bg-gray-800 font-semibold disabled:opacity-50"
             >
               {saving ? "Menyimpan..." : "Simpan"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductImageModal({
+  item,
+  branchId,
+  onClose,
+  onSaved,
+}: {
+  item: InventoryItem;
+  branchId: string;
+  onClose: () => void;
+  onSaved: (message: string) => void;
+}) {
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleUpload() {
+    if (!file) {
+      return;
+    }
+    try {
+      setBusy(true);
+      setError(null);
+      await uploadProductImage(item.id, branchId, file);
+      onSaved("Gambar produk diperbarui");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal mengunggah gambar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleRemove() {
+    const confirmed = await confirmAction({
+      title: "Hapus gambar produk?",
+      text: `Gambar ${item.name} akan dihapus dari penyimpanan.`,
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setBusy(true);
+      setError(null);
+      const response = await authFetch(
+        `/api/inventory/items/${item.id}/image`,
+        {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ branchId }),
+        },
+      );
+      const json = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal menghapus gambar");
+      }
+      onSaved("Gambar produk dihapus");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menghapus gambar");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const shown = preview ?? item.imageUrl;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+        <div className="px-6 py-5 border-b border-gray-100 flex items-center justify-between">
+          <h2 className="text-base font-bold text-gray-900">Gambar Produk</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-black"
+            aria-label="Tutup modal gambar"
+          >
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            {shown ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={shown}
+                alt={item.name}
+                className="h-20 w-20 rounded-lg object-cover bg-gray-100 border border-gray-200"
+              />
+            ) : (
+              <div className="h-20 w-20 rounded-lg bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-[10px] text-gray-400">
+                Belum ada
+              </div>
+            )}
+            <div>
+              <p className="font-semibold text-gray-900 text-sm">{item.name}</p>
+              <p className="text-xs text-gray-500">{item.sku}</p>
+            </div>
+          </div>
+
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/avif"
+            onChange={(event) => {
+              const picked = event.target.files?.[0] ?? null;
+              setFile(picked);
+              setPreview(picked ? URL.createObjectURL(picked) : null);
+            }}
+            className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-gray-900 file:text-white file:text-xs file:cursor-pointer"
+          />
+          <p className="text-[10px] text-gray-400">JPG/PNG/WEBP, maks 5 MB</p>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex gap-2">
+            {item.imageUrl && (
+              <button
+                onClick={handleRemove}
+                disabled={busy}
+                className="flex-1 py-2.5 text-sm border border-red-200 text-red-600 rounded-lg hover:bg-red-50 disabled:opacity-50"
+              >
+                Hapus
+              </button>
+            )}
+            <button
+              onClick={handleUpload}
+              disabled={busy || !file}
+              className="flex-1 py-2.5 text-sm bg-black text-white rounded-lg hover:bg-gray-800 font-semibold disabled:opacity-50"
+            >
+              {busy ? "Menyimpan..." : "Simpan Gambar"}
             </button>
           </div>
         </div>
@@ -543,6 +751,7 @@ export default function StokPage() {
   const [historyTarget, setHistoryTarget] = useState<InventoryItem | null>(
     null,
   );
+  const [imageTarget, setImageTarget] = useState<InventoryItem | null>(null);
   const [historyMovements, setHistoryMovements] = useState<InventoryMovement[]>(
     [],
   );
@@ -695,23 +904,32 @@ export default function StokPage() {
     sellingPrice: number;
     stockQty: number;
     minStockQty: number;
+    imageFile: File | null;
   }) {
     try {
       setError(null);
       setMessage(null);
 
+      const { imageFile, ...itemPayload } = payload;
       const response = await authFetch("/api/inventory/items", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           branchId,
-          ...payload,
+          ...itemPayload,
         }),
       });
 
-      const data = (await response.json()) as { message?: string };
+      const data = (await response.json()) as {
+        message?: string;
+        item?: { id?: string };
+      };
       if (!response.ok) {
         throw new Error(data.message ?? "Gagal menambah item stok");
+      }
+
+      if (imageFile && data.item?.id) {
+        await uploadProductImage(data.item.id, branchId, imageFile);
       }
 
       setMessage(data.message ?? "Item stok berhasil ditambahkan");
@@ -999,9 +1217,23 @@ export default function StokPage() {
                         </p>
                       </td>
                       <td className="px-5 py-3.5">
-                        <p className="font-medium text-gray-900 text-xs">
-                          {item.name}
-                        </p>
+                        <div className="flex items-center gap-2.5">
+                          {item.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={item.imageUrl}
+                              alt={item.name}
+                              className="h-9 w-9 rounded-md object-cover bg-gray-100 border border-gray-100 shrink-0"
+                            />
+                          ) : (
+                            <div className="h-9 w-9 rounded-md bg-gray-100 border border-gray-100 shrink-0 flex items-center justify-center text-[10px] text-gray-400">
+                              —
+                            </div>
+                          )}
+                          <p className="font-medium text-gray-900 text-xs">
+                            {item.name}
+                          </p>
+                        </div>
                       </td>
                       <td className="px-5 py-3.5">
                         <p className="text-xs text-gray-700">
@@ -1057,6 +1289,12 @@ export default function StokPage() {
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2 justify-end">
                           <button
+                            onClick={() => setImageTarget(item)}
+                            className="text-[11px] px-2.5 py-1.5 bg-indigo-100 text-indigo-700 rounded-lg hover:bg-indigo-200 font-semibold transition-colors"
+                          >
+                            Foto
+                          </button>
+                          <button
                             onClick={() => {
                               void openMovementHistory(item);
                             }}
@@ -1095,6 +1333,19 @@ export default function StokPage() {
         <AddItemModal
           onClose={() => setShowAddModal(false)}
           onSubmit={handleCreateItem}
+        />
+      )}
+
+      {imageTarget && (
+        <ProductImageModal
+          item={imageTarget}
+          branchId={branchId}
+          onClose={() => setImageTarget(null)}
+          onSaved={(msg) => {
+            setMessage(msg);
+            setImageTarget(null);
+            void loadItems(branchId);
+          }}
         />
       )}
 

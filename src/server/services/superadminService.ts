@@ -8,6 +8,11 @@ import {
 import { prisma } from "@/server/db/prisma";
 import { userRepository } from "@/server/repositories/userRepository";
 import { formatIndonesianDate } from "@/lib/dateFormat";
+import {
+  assertValidImage,
+  deleteImage,
+  uploadImage,
+} from "@/server/core/cloudinary";
 
 type BranchSummary = {
   branchId: string;
@@ -574,6 +579,8 @@ export const superadminService = {
         phoneNumber: barberman.phoneNumber,
         isActive: barberman.isActive,
         defaultDuration: barberman.defaultDuration,
+        imageUrl: barberman.imageUrl,
+        imagePublicId: barberman.imagePublicId,
         createdAt: barberman.createdAt,
         updatedAt: barberman.updatedAt,
         branchId: barberman.branchId,
@@ -818,9 +825,60 @@ export const superadminService = {
       throw new Error("Cannot delete barberman with existing bookings");
     }
 
-    return prisma.barberman.delete({
+    const deleted = await prisma.barberman.delete({
       where: { id: barbermanId },
     });
+    await deleteImage(barberman.imagePublicId);
+    return deleted;
+  },
+
+  // Barberman photos are restricted to SUPER_ADMIN (enforced at the route).
+  async setBarbermanImage(input: {
+    barbermanId: string;
+    file: { buffer: Buffer; type: string; size: number };
+  }) {
+    assertValidImage(input.file);
+
+    const existing = await prisma.barberman.findUnique({
+      where: { id: input.barbermanId },
+    });
+    if (!existing) {
+      throw new Error("Barberman not found");
+    }
+
+    const uploaded = await uploadImage(
+      input.file.buffer,
+      `monarch/barbermen/${existing.branchId}`,
+    );
+
+    const updated = await prisma.barberman.update({
+      where: { id: input.barbermanId },
+      data: { imageUrl: uploaded.url, imagePublicId: uploaded.publicId },
+    });
+
+    if (existing.imagePublicId && existing.imagePublicId !== uploaded.publicId) {
+      await deleteImage(existing.imagePublicId);
+    }
+
+    return updated;
+  },
+
+  async removeBarbermanImage(barbermanId: string) {
+    const existing = await prisma.barberman.findUnique({
+      where: { id: barbermanId },
+    });
+    if (!existing) {
+      throw new Error("Barberman not found");
+    }
+
+    const updated = await prisma.barberman.update({
+      where: { id: barbermanId },
+      data: { imageUrl: null, imagePublicId: null },
+    });
+
+    await deleteImage(existing.imagePublicId);
+
+    return updated;
   },
 
   async reports(branchId?: string, range?: string) {

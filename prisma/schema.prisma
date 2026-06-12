@@ -181,6 +181,8 @@ model Barberman {
   phoneNumber     String?
   isActive        Boolean          @default(true)
   defaultDuration Int              @default(60)
+  imageUrl        String?          @db.Text
+  imagePublicId   String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   branch          Branch           @relation(fields: [branchId], references: [id], onDelete: Cascade)
@@ -333,6 +335,8 @@ model InventoryItem {
   stockQty        Int                 @default(0)
   minStockQty     Int                 @default(0)
   isActive        Boolean             @default(true)
+  imageUrl        String?             @db.Text
+  imagePublicId   String?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   branch          Branch              @relation(fields: [branchId], references: [id], onDelete: Cascade)

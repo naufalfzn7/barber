@@ -1,5 +1,6 @@
 import LocationPage from "@/components/features/location/LocationPage";
 import yogyakartaData from "@/lib/yogyakartaData";
+import { getBranchBarbermenImages } from "@/server/services/publicMedia";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -7,6 +8,19 @@ export const metadata: Metadata = {
   description: yogyakartaData.metaDescription,
 };
 
-export default function YogyakartaPage() {
-  return <LocationPage data={yogyakartaData} />;
+export default async function YogyakartaPage() {
+  const dbBarbers = await getBranchBarbermenImages("JGJ");
+  const data =
+    dbBarbers.length > 0
+      ? {
+          ...yogyakartaData,
+          barbers: dbBarbers.map((barber) => ({
+            name: barber.name,
+            image: barber.imageUrl,
+            bookingUrl: "/reservasi",
+          })),
+        }
+      : yogyakartaData;
+
+  return <LocationPage data={data} />;
 }

@@ -77,6 +77,21 @@ export const inventoryRepository = {
     });
   },
 
+  updateImage(input: {
+    itemId: string;
+    branchId: string;
+    imageUrl: string | null;
+    imagePublicId: string | null;
+  }) {
+    return prisma.inventoryItem.updateMany({
+      where: { id: input.itemId, branchId: input.branchId },
+      data: {
+        imageUrl: input.imageUrl,
+        imagePublicId: input.imagePublicId,
+      },
+    });
+  },
+
   applyMovement(input: {
     branchId: string;
     itemId: string;

@@ -20,6 +20,7 @@ type BarbermanItem = {
   phoneNumber: string | null;
   isActive: boolean;
   defaultDuration: number;
+  imageUrl: string | null;
   createdAt: string;
   updatedAt: string;
   branchId: string;
@@ -58,6 +59,9 @@ export default function BarbermanPage() {
   const [form, setForm] = useState<FormState>(initialForm);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
 
   useToastFeedback({ message, error });
 
@@ -127,8 +131,20 @@ export default function BarbermanPage() {
     });
   }, [barbermen, filterBranch, filterStatus]);
 
+  function resetImageState() {
+    setImageFile(null);
+    setImagePreview(null);
+    setExistingImageUrl(null);
+  }
+
+  function onPickImage(file: File | null) {
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : null);
+  }
+
   function openCreateModal() {
     setEditingId(null);
+    resetImageState();
     setForm((current) => ({
       ...initialForm,
       branchId: current.branchId || branches[0]?.branchId || "",
@@ -138,6 +154,8 @@ export default function BarbermanPage() {
 
   function openEditModal(barberman: BarbermanItem) {
     setEditingId(barberman.id);
+    resetImageState();
+    setExistingImageUrl(barberman.imageUrl);
     setForm({
       branchId: barberman.branchId,
       name: barberman.name,
@@ -145,6 +163,49 @@ export default function BarbermanPage() {
       defaultDuration: barberman.defaultDuration,
     });
     setShowModal(true);
+  }
+
+  async function uploadBarbermanImage(barbermanId: string, file: File) {
+    const data = new FormData();
+    data.append("file", file);
+    const response = await authFetch(
+      `/api/superadmin/barbermen/${barbermanId}/image`,
+      { method: "POST", body: data },
+    );
+    const json = (await response.json()) as { message?: string };
+    if (!response.ok) {
+      throw new Error(json.message ?? "Gagal mengunggah foto barberman");
+    }
+  }
+
+  async function removeBarbermanImage(barbermanId: string) {
+    const confirmed = await confirmAction({
+      title: "Hapus foto barberman?",
+      text: "Foto akan dihapus dari penyimpanan.",
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(
+        `/api/superadmin/barbermen/${barbermanId}/image`,
+        { method: "DELETE" },
+      );
+      const json = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal menghapus foto");
+      }
+      setExistingImageUrl(null);
+      setMessage("Foto barberman dihapus");
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menghapus foto");
+    }
   }
 
   async function saveBarberman() {
@@ -186,15 +247,24 @@ export default function BarbermanPage() {
         },
       );
 
-      const json = (await response.json()) as { message?: string };
+      const json = (await response.json()) as {
+        message?: string;
+        result?: { id?: string };
+      };
       if (!response.ok) {
         throw new Error(json.message ?? "Gagal menyimpan barberman");
+      }
+
+      const barbermanId = editingId ?? json.result?.id;
+      if (imageFile && barbermanId) {
+        await uploadBarbermanImage(barbermanId, imageFile);
       }
 
       setMessage(editingId ? "Barberman diperbarui" : "Barberman dibuat");
       setShowModal(false);
       setEditingId(null);
       setForm(initialForm);
+      resetImageState();
       await loadData();
     } catch (err) {
       setError(
@@ -338,14 +408,28 @@ export default function BarbermanPage() {
             className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all"
           >
             <div className="flex items-start justify-between mb-4 gap-4">
-              <div>
-                <p className="text-sm font-bold text-gray-900">
-                  {barberman.name}
-                </p>
-                <p className="text-xs text-gray-500">{barberman.branchName}</p>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  {barberman.code} · default {barberman.defaultDuration} menit
-                </p>
+              <div className="flex items-start gap-3">
+                {barberman.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={barberman.imageUrl}
+                    alt={barberman.name}
+                    className="h-14 w-14 rounded-lg object-cover bg-gray-100 border border-gray-100 shrink-0"
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-lg bg-gray-100 border border-gray-100 shrink-0 flex items-center justify-center text-sm font-bold text-gray-400">
+                    {barberman.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div>
+                  <p className="text-sm font-bold text-gray-900">
+                    {barberman.name}
+                  </p>
+                  <p className="text-xs text-gray-500">{barberman.branchName}</p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {barberman.code} · default {barberman.defaultDuration} menit
+                  </p>
+                </div>
               </div>
               <span
                 className={`text-[10px] px-2 py-1 rounded-full font-semibold ${
@@ -514,6 +598,47 @@ export default function BarbermanPage() {
                 }
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Foto Barberman
+              </label>
+              <div className="flex items-center gap-3">
+                {imagePreview || existingImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={imagePreview ?? existingImageUrl ?? ""}
+                    alt="Preview"
+                    className="h-16 w-16 rounded-lg object-cover bg-gray-100 border border-gray-200"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-[10px] text-gray-400 text-center px-1">
+                    Belum ada foto
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/avif"
+                    onChange={(event) =>
+                      onPickImage(event.target.files?.[0] ?? null)
+                    }
+                    className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-gray-900 file:text-white file:text-xs file:cursor-pointer"
+                  />
+                  {editingId && existingImageUrl && !imageFile && (
+                    <button
+                      type="button"
+                      onClick={() => removeBarbermanImage(editingId)}
+                      className="text-[10px] text-red-600 hover:underline text-left"
+                    >
+                      Hapus foto saat ini
+                    </button>
+                  )}
+                  <span className="text-[10px] text-gray-400">
+                    JPG/PNG/WEBP, maks 5 MB
+                  </span>
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-2 pt-3">
               <button
