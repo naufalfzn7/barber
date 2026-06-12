@@ -29,6 +29,7 @@ type ServiceItem = {
   category: string;
   description: string;
   usageCount: number;
+  imageUrl: string | null;
 };
 
 type FormState = {
@@ -98,6 +99,9 @@ export default function LayananPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
 
   useToastFeedback({
     message,
@@ -176,8 +180,20 @@ export default function LayananPage() {
     });
   }, [services, filterBranch, filterCategory]);
 
+  function resetImageState() {
+    setImageFile(null);
+    setImagePreview(null);
+    setExistingImageUrl(null);
+  }
+
+  function onPickImage(file: File | null) {
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : null);
+  }
+
   function openCreateModal() {
     setEditingId(null);
+    resetImageState();
     setForm((current) => ({
       ...initialForm,
       branchId: current.branchId || branches[0]?.branchId || "",
@@ -187,6 +203,8 @@ export default function LayananPage() {
 
   function openEditModal(service: ServiceItem) {
     setEditingId(service.id);
+    resetImageState();
+    setExistingImageUrl(service.imageUrl);
     setForm({
       branchId: service.branchId,
       name: service.name,
@@ -195,6 +213,49 @@ export default function LayananPage() {
       bufferMinutes: service.bufferMinutes,
     });
     setShowModal(true);
+  }
+
+  async function uploadServiceImage(serviceId: string, file: File) {
+    const data = new FormData();
+    data.append("file", file);
+    const response = await authFetch(
+      `/api/superadmin/services/${serviceId}/image`,
+      { method: "POST", body: data },
+    );
+    const json = (await response.json()) as { message?: string };
+    if (!response.ok) {
+      throw new Error(json.message ?? "Gagal mengunggah foto layanan");
+    }
+  }
+
+  async function removeServiceImage(serviceId: string) {
+    const confirmed = await confirmAction({
+      title: "Hapus foto layanan?",
+      text: "Foto akan dihapus dari penyimpanan.",
+      confirmButtonText: "Ya, hapus",
+      icon: "warning",
+      danger: true,
+    });
+    if (!confirmed) {
+      return;
+    }
+    try {
+      setError(null);
+      setMessage(null);
+      const response = await authFetch(
+        `/api/superadmin/services/${serviceId}/image`,
+        { method: "DELETE" },
+      );
+      const json = (await response.json()) as { message?: string };
+      if (!response.ok) {
+        throw new Error(json.message ?? "Gagal menghapus foto");
+      }
+      setExistingImageUrl(null);
+      setMessage("Foto layanan dihapus");
+      await loadData();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Gagal menghapus foto");
+    }
   }
 
   async function saveService() {
@@ -237,15 +298,24 @@ export default function LayananPage() {
         },
       );
 
-      const json = (await response.json()) as { message?: string };
+      const json = (await response.json()) as {
+        message?: string;
+        result?: { id?: string };
+      };
       if (!response.ok) {
         throw new Error(json.message ?? "Gagal menyimpan layanan");
+      }
+
+      const serviceId = editingId ?? json.result?.id;
+      if (imageFile && serviceId) {
+        await uploadServiceImage(serviceId, imageFile);
       }
 
       setMessage(editingId ? "Layanan diperbarui" : "Layanan dibuat");
       setShowModal(false);
       setEditingId(null);
       setForm(initialForm);
+      resetImageState();
       await loadData();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gagal menyimpan layanan");
@@ -348,16 +418,30 @@ export default function LayananPage() {
             className="bg-white rounded-xl border border-gray-100 p-5 shadow-sm hover:shadow-md transition-all"
           >
             <div className="flex items-start justify-between mb-3">
-              <div className="flex-1">
-                <h3 className="text-sm font-bold text-gray-900">
-                  {service.name}
-                </h3>
-                <p className="text-xs text-gray-500 mt-1 line-clamp-2">
-                  {service.description}
-                </p>
-                <p className="text-[10px] text-gray-400 mt-1">
-                  {service.branchName} · {service.branchCode}
-                </p>
+              <div className="flex items-start gap-3 flex-1">
+                {service.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={service.imageUrl}
+                    alt={service.name}
+                    className="h-14 w-14 rounded-lg object-cover bg-gray-100 border border-gray-100 shrink-0"
+                  />
+                ) : (
+                  <div className="h-14 w-14 rounded-lg bg-gray-100 border border-gray-100 shrink-0 flex items-center justify-center text-sm font-bold text-gray-400">
+                    {service.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <div className="flex-1">
+                  <h3 className="text-sm font-bold text-gray-900">
+                    {service.name}
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1 line-clamp-2">
+                    {service.description}
+                  </p>
+                  <p className="text-[10px] text-gray-400 mt-1">
+                    {service.branchName} · {service.branchCode}
+                  </p>
+                </div>
               </div>
               <span
                 className={`text-[10px] px-2 py-1 rounded-full font-semibold ml-2 shrink-0 ${
@@ -517,6 +601,47 @@ export default function LayananPage() {
                 }
                 className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-900"
               />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Foto Layanan
+              </label>
+              <div className="flex items-center gap-3">
+                {imagePreview || existingImageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={imagePreview ?? existingImageUrl ?? ""}
+                    alt="Preview"
+                    className="h-16 w-16 rounded-lg object-cover bg-gray-100 border border-gray-200"
+                  />
+                ) : (
+                  <div className="h-16 w-16 rounded-lg bg-gray-50 border border-dashed border-gray-300 flex items-center justify-center text-[10px] text-gray-400 text-center px-1">
+                    Belum ada foto
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/avif"
+                    onChange={(event) =>
+                      onPickImage(event.target.files?.[0] ?? null)
+                    }
+                    className="text-xs file:mr-2 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-gray-900 file:text-white file:text-xs file:cursor-pointer"
+                  />
+                  {editingId && existingImageUrl && !imageFile && (
+                    <button
+                      type="button"
+                      onClick={() => removeServiceImage(editingId)}
+                      className="text-[10px] text-red-600 hover:underline text-left"
+                    >
+                      Hapus foto saat ini
+                    </button>
+                  )}
+                  <span className="text-[10px] text-gray-400">
+                    JPG/PNG/WEBP, maks 5 MB
+                  </span>
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-2 pt-3">
               <button

@@ -667,6 +667,7 @@ export const superadminService = {
       durationMinutes: service.durationMinutes,
       bufferMinutes: service.bufferMinutes,
       isActive: service.isActive,
+      imageUrl: service.imageUrl,
       createdAt: service.createdAt,
       updatedAt: service.updatedAt,
       category: inferCategory(service.name, service.code),
@@ -721,6 +722,55 @@ export const superadminService = {
         ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
       },
     });
+  },
+
+  // Service photos are restricted to SUPER_ADMIN (enforced at the route).
+  async setServiceImage(input: {
+    serviceId: string;
+    file: { buffer: Buffer; type: string; size: number };
+  }) {
+    assertValidImage(input.file);
+
+    const existing = await prisma.service.findUnique({
+      where: { id: input.serviceId },
+    });
+    if (!existing) {
+      throw new Error("Service not found");
+    }
+
+    const uploaded = await uploadImage(
+      input.file.buffer,
+      `monarch/services/${existing.branchId}`,
+    );
+
+    const updated = await prisma.service.update({
+      where: { id: input.serviceId },
+      data: { imageUrl: uploaded.url, imagePublicId: uploaded.publicId },
+    });
+
+    if (existing.imagePublicId && existing.imagePublicId !== uploaded.publicId) {
+      await deleteImage(existing.imagePublicId);
+    }
+
+    return updated;
+  },
+
+  async removeServiceImage(serviceId: string) {
+    const existing = await prisma.service.findUnique({
+      where: { id: serviceId },
+    });
+    if (!existing) {
+      throw new Error("Service not found");
+    }
+
+    const updated = await prisma.service.update({
+      where: { id: serviceId },
+      data: { imageUrl: null, imagePublicId: null },
+    });
+
+    await deleteImage(existing.imagePublicId);
+
+    return updated;
   },
 
   async createBranch(input: { code: string; name: string; timezone?: string }) {
