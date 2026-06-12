@@ -116,11 +116,25 @@ export async function confirmAction(input: {
 export function useToastFeedback(input: {
   message?: string | null;
   error?: string | null;
+  // Called right after a toast is triggered so the caller can reset its
+  // message/error state. Without this, a lingering `message` re-fires the
+  // toast when the cached page re-mounts on client navigation.
+  onMessageShown?: () => void;
+  onErrorShown?: () => void;
 }) {
   const lastMessageRef = useRef<string | null>(null);
   const lastErrorRef = useRef<string | null>(null);
   const lastMessageShownAtRef = useRef<number>(0);
   const lastErrorShownAtRef = useRef<number>(0);
+
+  // Keep latest callbacks in refs so they don't widen the effect deps.
+  const onMessageShownRef = useRef(input.onMessageShown);
+  const onErrorShownRef = useRef(input.onErrorShown);
+
+  useEffect(() => {
+    onMessageShownRef.current = input.onMessageShown;
+    onErrorShownRef.current = input.onErrorShown;
+  });
 
   useEffect(() => {
     if (input.message !== null && input.message !== undefined) {
@@ -163,6 +177,7 @@ export function useToastFeedback(input: {
         confirmButtonColor: "#111827",
       }),
     );
+    onMessageShownRef.current?.();
   }, [input.message]);
 
   useEffect(() => {
@@ -188,5 +203,6 @@ export function useToastFeedback(input: {
         confirmButtonColor: "#111827",
       }),
     );
+    onErrorShownRef.current?.();
   }, [input.error]);
 }

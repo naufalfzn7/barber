@@ -34,7 +34,12 @@ export default function MemberProfilePage() {
 
   const passwordChangeState = useChangePassword();
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   useEffect(() => {
     async function fetchMemberInfo() {

@@ -309,7 +309,12 @@ export default function MemberBookingPanel() {
   const [receiptModal, setReceiptModal] = useState<ReceiptDetail | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   const selectedBranch = useMemo(
     () => branches.find((branch) => branch.id === branchId) ?? null,

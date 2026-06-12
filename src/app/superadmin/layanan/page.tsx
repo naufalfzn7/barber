@@ -99,7 +99,12 @@ export default function LayananPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(initialForm);
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   async function loadData() {
     try {

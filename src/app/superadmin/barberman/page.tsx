@@ -63,7 +63,12 @@ export default function BarbermanPage() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   async function loadData() {
     try {

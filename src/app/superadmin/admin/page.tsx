@@ -69,7 +69,12 @@ export default function AdminPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   async function loadData() {
     try {

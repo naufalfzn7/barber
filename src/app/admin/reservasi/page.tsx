@@ -485,7 +485,12 @@ export default function ReservasiPage() {
     qrisModal?.paymentStatus === "EXPIRED" ||
     qrisModal?.paymentStatus === "FAILED";
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   useEffect(() => {
     const now = new Date();

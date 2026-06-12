@@ -207,7 +207,12 @@ export default function MemberReservationDashboard() {
   const [refundContactPhone, setRefundContactPhone] = useState("");
   const [submittingRefund, setSubmittingRefund] = useState(false);
 
-  useToastFeedback({ message, error: errorMessage });
+  useToastFeedback({
+    message,
+    error: errorMessage,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setErrorMessage(null),
+  });
 
   // Filter state
   const [filterStatus, setFilterStatus] = useState<string>("all");

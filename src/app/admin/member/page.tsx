@@ -41,7 +41,12 @@ export default function MemberPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [search, setSearch] = useState("");
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [fullName, setFullName] = useState("");

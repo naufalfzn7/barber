@@ -84,7 +84,12 @@ export default function CabangPage() {
   });
   const [submitting, setSubmitting] = useState(false);
 
-  useToastFeedback({ message: success, error });
+  useToastFeedback({
+    message: success,
+    error,
+    onMessageShown: () => setSuccess(null),
+    onErrorShown: () => setError(null),
+  });
 
   const loadBranches = async () => {
     try {

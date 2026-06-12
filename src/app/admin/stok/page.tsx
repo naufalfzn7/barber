@@ -740,7 +740,12 @@ export default function StokPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
-  useToastFeedback({ message, error });
+  useToastFeedback({
+    message,
+    error,
+    onMessageShown: () => setMessage(null),
+    onErrorShown: () => setError(null),
+  });
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [adjustTarget, setAdjustTarget] = useState<{
