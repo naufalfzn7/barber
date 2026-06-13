@@ -7,7 +7,7 @@ export interface NavItem {
 
 export interface Barber {
   name: string;
-  image: string;
+  image: string | null;
   bookingUrl: string;
 }
 

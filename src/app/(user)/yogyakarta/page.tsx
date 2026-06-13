@@ -1,6 +1,11 @@
 import LocationPage from "@/components/features/location/LocationPage";
 import yogyakartaData from "@/lib/yogyakartaData";
-import { getBranchBarbermenImages } from "@/server/services/publicMedia";
+import { buildBranchPageData } from "@/lib/branchPageData";
+import {
+  getBranchBarbermenImages,
+  getBranchProducts,
+  getBranchServices,
+} from "@/server/services/publicMedia";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -9,18 +14,18 @@ export const metadata: Metadata = {
 };
 
 export default async function YogyakartaPage() {
-  const dbBarbers = await getBranchBarbermenImages("JGJ");
-  const data =
-    dbBarbers.length > 0
-      ? {
-          ...yogyakartaData,
-          barbers: dbBarbers.map((barber) => ({
-            name: barber.name,
-            image: barber.imageUrl,
-            bookingUrl: "/reservasi",
-          })),
-        }
-      : yogyakartaData;
+  const [barbermen, services, products] = await Promise.all([
+    getBranchBarbermenImages("JGJ"),
+    getBranchServices("JGJ"),
+    getBranchProducts("JGJ"),
+  ]);
+
+  const data = buildBranchPageData({
+    fallback: yogyakartaData,
+    barbermen,
+    services,
+    products,
+  });
 
   return <LocationPage data={data} />;
 }

@@ -1,6 +1,11 @@
 import LocationPage from "@/components/features/location/LocationPage";
 import surakartaData from "@/lib/surakartaData";
-import { getBranchBarbermenImages } from "@/server/services/publicMedia";
+import { buildBranchPageData } from "@/lib/branchPageData";
+import {
+  getBranchBarbermenImages,
+  getBranchProducts,
+  getBranchServices,
+} from "@/server/services/publicMedia";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -9,18 +14,18 @@ export const metadata: Metadata = {
 };
 
 export default async function SurakartaPage() {
-  const dbBarbers = await getBranchBarbermenImages("SKA");
-  const data =
-    dbBarbers.length > 0
-      ? {
-          ...surakartaData,
-          barbers: dbBarbers.map((barber) => ({
-            name: barber.name,
-            image: barber.imageUrl,
-            bookingUrl: "/reservasi",
-          })),
-        }
-      : surakartaData;
+  const [barbermen, services, products] = await Promise.all([
+    getBranchBarbermenImages("SKA"),
+    getBranchServices("SKA"),
+    getBranchProducts("SKA"),
+  ]);
+
+  const data = buildBranchPageData({
+    fallback: surakartaData,
+    barbermen,
+    services,
+    products,
+  });
 
   return <LocationPage data={data} />;
 }
